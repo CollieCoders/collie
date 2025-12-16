@@ -499,6 +499,9 @@ User Pre-Flight Checklist
 User Acceptance Checklist
 - Running npx @collie-lang/cli init results in a project where a .collie import works
 
+### Implementation Summary
+- Implemented `collie init` in the CLI to install the compiler/vite dev deps via the detected package manager, patch `vite.config.ts` to import/use `collie()`, and scaffold `src/collie.d.ts`, exiting with actionable errors if the project layout is unexpected.
+
 ## Stage 8 — Release Prep (MVP)
 
 ### Stage 8.1 — Docs pass (root + packages)
