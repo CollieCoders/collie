@@ -1,4 +1,13 @@
-import { ElementNode, ExpressionNode, IfNode, Node, PropsField, RootNode, TextNode } from "./ast";
+import {
+  ConditionalBranch,
+  ConditionalNode,
+  ElementNode,
+  ExpressionNode,
+  Node,
+  PropsField,
+  RootNode,
+  TextNode
+} from "./ast";
 import { Diagnostic, DiagnosticCode, createSpan } from "./diagnostics";
 
 export interface ParseResult {
@@ -6,25 +15,32 @@ export interface ParseResult {
   diagnostics: Diagnostic[];
 }
 
-interface IfBranchContext {
-  kind: "IfBranch";
-  owner: IfNode;
-  branch: "consequent" | "alternate";
+interface ConditionalBranchContext {
+  kind: "ConditionalBranch";
+  owner: ConditionalNode;
+  branch: ConditionalBranch;
   children: Node[];
 }
 
-type ParentNode = RootNode | ElementNode | IfBranchContext;
+type ParentNode = RootNode | ElementNode | ConditionalBranchContext;
 
 interface StackItem {
   node: ParentNode;
   level: number;
 }
 
-interface IfLocation {
-  node: IfNode;
+interface BranchLocation {
+  branch: ConditionalBranch;
   line: number;
   column: number;
   lineOffset: number;
+  length: number;
+}
+
+interface ConditionalChainState {
+  node: ConditionalNode;
+  level: number;
+  hasElse: boolean;
 }
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
@@ -35,8 +51,8 @@ export function parse(source: string): ParseResult {
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
-  const pendingElse = new Map<number, IfNode>();
-  const ifLocations: IfLocation[] = [];
+  const conditionalChains = new Map<number, ConditionalChainState>();
+  const branchLocations: BranchLocation[] = [];
 
   const normalized = source.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
@@ -106,14 +122,11 @@ export function parse(source: string): ParseResult {
       stack.pop();
     }
 
-    const isElseLine = trimmed === "@else";
-
-    if (!isElseLine) {
-      for (const key of Array.from(pendingElse.keys())) {
-        if (key > level || key === level) {
-          pendingElse.delete(key);
-        }
-      }
+    cleanupConditionalChains(conditionalChains, level);
+    const isElseIfLine = /^@elseIf\b/.test(trimmed);
+    const isElseLine = /^@else\b/.test(trimmed) && !isElseIfLine;
+    if (!isElseIfLine && !isElseLine) {
+      conditionalChains.delete(level);
     }
 
     if (trimmed === "props") {
@@ -164,82 +177,165 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
-    if (isElseLine) {
-      if (!pendingElse.size) {
-        pushDiag(
-          diagnostics,
-          "COLLIE203",
-          "@else must follow an @if block.",
-          lineNumber,
-          indent + 1,
-          lineOffset,
-          trimmed.length
-        );
+    const parent = stack[stack.length - 1].node;
+
+    if (trimmed.startsWith("@if")) {
+      const header = parseConditionalHeader(
+        "if",
+        lineContent,
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        diagnostics
+      );
+      if (!header) {
         continue;
       }
-
-      const target = pendingElse.get(level);
-      if (!target) {
-        pushDiag(
-          diagnostics,
-          "COLLIE204",
-          "@else indentation must match the preceding @if.",
+      const chain: ConditionalNode = { type: "Conditional", branches: [] };
+      const branch: ConditionalBranch = { test: header.test, body: [] };
+      chain.branches.push(branch);
+      parent.children.push(chain);
+      conditionalChains.set(level, { node: chain, level, hasElse: false });
+      branchLocations.push({
+        branch,
+        line: lineNumber,
+        column: indent + 1,
+        lineOffset,
+        length: header.directiveLength
+      });
+      if (header.inlineBody) {
+        const inlineNode = parseInlineNode(
+          header.inlineBody,
           lineNumber,
-          indent + 1,
+          header.inlineColumn ?? indent + 1,
           lineOffset,
-          trimmed.length
+          diagnostics
         );
-        const highestLevel = Math.max(...pendingElse.keys());
-        pendingElse.delete(highestLevel);
-        for (const key of Array.from(pendingElse.keys())) {
-          if (key > level) {
-            pendingElse.delete(key);
-          }
+        if (inlineNode) {
+          branch.body.push(inlineNode);
         }
-        continue;
-      }
-
-      if (target.alternate) {
-        pushDiag(
-          diagnostics,
-          "COLLIE203",
-          "An @if block can only have one @else branch.",
-          lineNumber,
-          indent + 1,
-          lineOffset,
-          trimmed.length
-        );
-        pendingElse.delete(level);
-        for (const key of Array.from(pendingElse.keys())) {
-          if (key > level) {
-            pendingElse.delete(key);
-          }
-        }
-        continue;
-      }
-
-      target.alternate = [];
-      const branch = createIfBranch(target, "alternate");
-      stack.push({ node: branch, level });
-      pendingElse.delete(level);
-      for (const key of Array.from(pendingElse.keys())) {
-        if (key > level) {
-          pendingElse.delete(key);
-        }
+      } else {
+        stack.push({ node: createConditionalBranchContext(chain, branch), level });
       }
       continue;
     }
 
-    const parent = stack[stack.length - 1].node;
+    if (isElseIfLine) {
+      const chain = conditionalChains.get(level);
+      if (!chain) {
+        pushDiag(
+          diagnostics,
+          "COLLIE205",
+          "@elseIf must follow an @if at the same indentation level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (chain.hasElse) {
+        pushDiag(
+          diagnostics,
+          "COLLIE207",
+          "@elseIf cannot appear after an @else in the same chain.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const header = parseConditionalHeader(
+        "elseIf",
+        lineContent,
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        diagnostics
+      );
+      if (!header) {
+        continue;
+      }
+      const branch: ConditionalBranch = { test: header.test, body: [] };
+      chain.node.branches.push(branch);
+      branchLocations.push({
+        branch,
+        line: lineNumber,
+        column: indent + 1,
+        lineOffset,
+        length: header.directiveLength
+      });
+      if (header.inlineBody) {
+        const inlineNode = parseInlineNode(
+          header.inlineBody,
+          lineNumber,
+          header.inlineColumn ?? indent + 1,
+          lineOffset,
+          diagnostics
+        );
+        if (inlineNode) {
+          branch.body.push(inlineNode);
+        }
+      } else {
+        stack.push({ node: createConditionalBranchContext(chain.node, branch), level });
+      }
+      continue;
+    }
 
-    if (trimmed.startsWith("@if")) {
-      const ifNode = parseIfLine(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
-      if (ifNode) {
-        parent.children.push(ifNode);
-        const branch = createIfBranch(ifNode, "consequent");
-        stack.push({ node: branch, level });
-        pendingElse.set(level, ifNode);
-        ifLocations.push({ node: ifNode, line: lineNumber, column: indent + 1, lineOffset });
+    if (isElseLine) {
+      const chain = conditionalChains.get(level);
+      if (!chain) {
+        pushDiag(
+          diagnostics,
+          "COLLIE206",
+          "@else must follow an @if at the same indentation level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (chain.hasElse) {
+        pushDiag(
+          diagnostics,
+          "COLLIE203",
+          "An @if chain can only have one @else branch.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const header = parseElseHeader(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (!header) {
+        continue;
+      }
+      const branch: ConditionalBranch = { test: undefined, body: [] };
+      chain.node.branches.push(branch);
+      chain.hasElse = true;
+      branchLocations.push({
+        branch,
+        line: lineNumber,
+        column: indent + 1,
+        lineOffset,
+        length: header.directiveLength
+      });
+      if (header.inlineBody) {
+        const inlineNode = parseInlineNode(
+          header.inlineBody,
+          lineNumber,
+          header.inlineColumn ?? indent + 1,
+          lineOffset,
+          diagnostics
+        );
+        if (inlineNode) {
+          branch.body.push(inlineNode);
+        }
+      } else {
+        stack.push({ node: createConditionalBranchContext(chain.node, branch), level });
       }
       continue;
     }
@@ -269,21 +365,168 @@ export function parse(source: string): ParseResult {
     stack.push({ node: element, level });
   }
 
-  for (const info of ifLocations) {
-    if (info.node.consequent.length === 0) {
+  for (const info of branchLocations) {
+    if (info.branch.body.length === 0) {
       pushDiag(
         diagnostics,
-        "COLLIE202",
-        "@if blocks must include at least one child line.",
+        "COLLIE208",
+        "Conditional branches must include an inline body or indented block.",
         info.line,
         info.column,
         info.lineOffset,
-        3
+        info.length || 3
       );
     }
   }
 
   return { root, diagnostics };
+}
+
+function cleanupConditionalChains(state: Map<number, ConditionalChainState>, level: number): void {
+  for (const key of Array.from(state.keys())) {
+    if (key > level) {
+      state.delete(key);
+    }
+  }
+}
+
+interface ConditionalHeaderResult {
+  test?: string;
+  inlineBody?: string;
+  inlineColumn?: number;
+  directiveLength: number;
+}
+
+function parseConditionalHeader(
+  kind: "if" | "elseIf",
+  lineContent: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ConditionalHeaderResult | null {
+  const trimmed = lineContent.trimEnd();
+  const pattern = kind === "if" ? /^@if\s*\((.*)\)(.*)$/ : /^@elseIf\s*\((.*)\)(.*)$/;
+  const match = trimmed.match(pattern);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE201",
+      kind === "if" ? "Invalid @if syntax. Use @if (condition)." : "Invalid @elseIf syntax. Use @elseIf (condition).",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 3
+    );
+    return null;
+  }
+  const test = match[1].trim();
+  if (!test) {
+    pushDiag(
+      diagnostics,
+      "COLLIE201",
+      kind === "if" ? "@if condition cannot be empty." : "@elseIf condition cannot be empty.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 3
+    );
+    return null;
+  }
+  const remainderRaw = match[2] ?? "";
+  const inlineBody = remainderRaw.trim();
+  const remainderOffset = trimmed.length - remainderRaw.length;
+  const leadingWhitespace = remainderRaw.length - inlineBody.length;
+  const inlineColumn =
+    inlineBody.length > 0 ? column + remainderOffset + leadingWhitespace : undefined;
+  return {
+    test,
+    inlineBody: inlineBody.length ? inlineBody : undefined,
+    inlineColumn,
+    directiveLength: trimmed.length || 3
+  };
+}
+
+function parseElseHeader(
+  lineContent: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ConditionalHeaderResult | null {
+  const trimmed = lineContent.trimEnd();
+  const match = trimmed.match(/^@else\b(.*)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE203",
+      "Invalid @else syntax.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  const remainderRaw = match[1] ?? "";
+  const inlineBody = remainderRaw.trim();
+  const remainderOffset = trimmed.length - remainderRaw.length;
+  const leadingWhitespace = remainderRaw.length - inlineBody.length;
+  const inlineColumn =
+    inlineBody.length > 0 ? column + remainderOffset + leadingWhitespace : undefined;
+  return {
+    inlineBody: inlineBody.length ? inlineBody : undefined,
+    inlineColumn,
+    directiveLength: trimmed.length || 4
+  };
+}
+
+function parseInlineNode(
+  source: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): Node | null {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith("|")) {
+    return parseTextLine(trimmed, lineNumber, column, lineOffset, diagnostics);
+  }
+
+  if (trimmed.startsWith("{{")) {
+    return parseExpressionLine(trimmed, lineNumber, column, lineOffset, diagnostics);
+  }
+
+  if (trimmed.startsWith("@")) {
+    pushDiag(
+      diagnostics,
+      "COLLIE209",
+      "Inline conditional bodies may only contain elements, text, or expressions.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length
+    );
+    return null;
+  }
+
+  return parseElement(trimmed, lineNumber, column, lineOffset, diagnostics);
+}
+
+function createConditionalBranchContext(
+  owner: ConditionalNode,
+  branch: ConditionalBranch
+): ConditionalBranchContext {
+  return {
+    kind: "ConditionalBranch",
+    owner,
+    branch,
+    children: branch.body
+  };
 }
 
 function parseTextLine(
@@ -306,8 +549,28 @@ function parseTextLine(
   let cursor = 0;
 
   while (cursor < payload.length) {
-    const exprStart = payload.indexOf("{{", cursor);
-    if (exprStart === -1) {
+    const nextOpen = payload.indexOf("{{", cursor);
+    const nextClose = payload.indexOf("}}", cursor);
+
+    if (nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen)) {
+      const leadingText = payload.slice(cursor, nextClose);
+      if (leadingText.length) {
+        parts.push({ type: "text", value: leadingText });
+      }
+      pushDiag(
+        diagnostics,
+        "COLLIE005",
+        "Inline expression closing }} must follow an opening {{.",
+        lineNumber,
+        payloadColumn + nextClose,
+        lineOffset,
+        2
+      );
+      cursor = nextClose + 2;
+      continue;
+    }
+
+    if (nextOpen === -1) {
       const text = payload.slice(cursor);
       if (text.length) {
         parts.push({ type: "text", value: text });
@@ -315,37 +578,37 @@ function parseTextLine(
       break;
     }
 
-    if (exprStart > cursor) {
-      parts.push({ type: "text", value: payload.slice(cursor, exprStart) });
+    if (nextOpen > cursor) {
+      parts.push({ type: "text", value: payload.slice(cursor, nextOpen) });
     }
 
-    const exprEnd = payload.indexOf("}}", exprStart + 2);
+    const exprEnd = payload.indexOf("}}", nextOpen + 2);
     if (exprEnd === -1) {
       pushDiag(
         diagnostics,
         "COLLIE005",
         "Inline expression must end with }}.",
         lineNumber,
-        payloadColumn + exprStart,
+        payloadColumn + nextOpen,
         lineOffset
       );
-      const remainder = payload.slice(exprStart);
+      const remainder = payload.slice(nextOpen);
       if (remainder.length) {
         parts.push({ type: "text", value: remainder });
       }
       break;
     }
 
-    const inner = payload.slice(exprStart + 2, exprEnd).trim();
+    const inner = payload.slice(nextOpen + 2, exprEnd).trim();
     if (!inner) {
       pushDiag(
         diagnostics,
         "COLLIE005",
         "Inline expression cannot be empty.",
         lineNumber,
-        payloadColumn + exprStart,
+        payloadColumn + nextOpen,
         lineOffset,
-        exprEnd - exprStart
+        exprEnd - nextOpen
       );
     } else {
       parts.push({ type: "expr", value: inner });
@@ -407,56 +670,6 @@ function parseExpressionLine(
   return { type: "Expression", value: inner };
 }
 
-function parseIfLine(
-  line: string,
-  lineNumber: number,
-  column: number,
-  lineOffset: number,
-  diagnostics: Diagnostic[]
-): IfNode | null {
-  const match = line.match(/^@if\s*\((.*)\)$/);
-  if (!match) {
-    pushDiag(
-      diagnostics,
-      "COLLIE201",
-      "Invalid @if syntax. Use @if (condition).",
-      lineNumber,
-      column,
-      lineOffset,
-      Math.max(line.length, 3)
-    );
-    return null;
-  }
-
-  const test = match[1].trim();
-  if (!test) {
-    pushDiag(
-      diagnostics,
-      "COLLIE201",
-      "@if condition cannot be empty.",
-      lineNumber,
-      column,
-      lineOffset,
-      Math.max(line.length, 3)
-    );
-    return null;
-  }
-
-  return { type: "If", test, consequent: [] };
-}
-
-function createIfBranch(owner: IfNode, branch: "consequent" | "alternate"): IfBranchContext {
-  const children =
-    branch === "consequent"
-      ? owner.consequent
-      : owner.alternate ?? (owner.alternate = []);
-  return {
-    kind: "IfBranch",
-    owner,
-    branch,
-    children
-  };
-}
 
 function parsePropsField(
   line: string,
@@ -525,13 +738,29 @@ function parseElement(
   const name = nameMatch[0];
   let rest = line.slice(name.length);
   const classes: string[] = [];
+  let inlineText: TextNode | null = null;
 
   while (rest.length > 0) {
     if (!rest.startsWith(".")) {
+      const pipeMatch = rest.match(/^\s*\|/);
+      if (pipeMatch) {
+        const pipeIndex = rest.indexOf("|");
+        const textColumn = column + name.length + pipeIndex;
+        const textNode = parseTextLine(
+          rest.slice(pipeIndex),
+          lineNumber,
+          textColumn,
+          lineOffset,
+          diagnostics
+        );
+        inlineText = textNode;
+        rest = "";
+        break;
+      }
       pushDiag(
         diagnostics,
         "COLLIE004",
-        "Element lines may only contain .class shorthands after the tag name.",
+        "Element lines may only contain .class shorthands or inline text after the tag name.",
         lineNumber,
         column + name.length,
         lineOffset
@@ -561,7 +790,7 @@ function parseElement(
     type: "Element",
     name,
     classes,
-    children: []
+    children: inlineText ? [inlineText] : []
   };
 }
 

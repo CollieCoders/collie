@@ -1,7 +1,13 @@
 import path from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { compile } from "@collie-lang/compiler";
+
+type JsxRuntime = "automatic" | "classic";
+
+export interface ColliePluginOptions {
+  jsxRuntime?: JsxRuntime;
+}
 
 function toComponentNameHint(id: string): string {
   const base = path.basename(id).replace(/\.[^.]+$/, "");
@@ -9,16 +15,22 @@ function toComponentNameHint(id: string): string {
 }
 
 function formatDiagnostic(id: string, diagnostic: Diagnostic): string {
+  const file = diagnostic.file ?? id;
   const where = diagnostic.span ? `${diagnostic.span.start.line}:${diagnostic.span.start.col}` : "";
-  const location = where ? `${id}:${where}` : id;
+  const location = where ? `${file}:${where}` : file;
   const code = diagnostic.code ? diagnostic.code : "COLLIE";
   return `${location} [${code}] ${diagnostic.message}`;
 }
 
-export default function colliePlugin(): Plugin {
+export default function colliePlugin(options: ColliePluginOptions = {}): Plugin {
+  let resolvedRuntime: JsxRuntime = options.jsxRuntime ?? "automatic";
+
   return {
     name: "collie",
     enforce: "pre",
+    configResolved(config) {
+      resolvedRuntime = options.jsxRuntime ?? inferJsxRuntime(config);
+    },
 
     transform(source, id) {
       if (!id.endsWith(".collie")) return;
@@ -26,7 +38,7 @@ export default function colliePlugin(): Plugin {
       const result = compile(source, {
         filename: id,
         componentNameHint: toComponentNameHint(id),
-        jsxRuntime: "automatic"
+        jsxRuntime: resolvedRuntime
       });
 
       const errors = result.diagnostics.filter((d) => d.severity === "error");
@@ -38,4 +50,12 @@ export default function colliePlugin(): Plugin {
       return { code: result.code, map: result.map ?? null };
     }
   };
+}
+
+function inferJsxRuntime(config: ResolvedConfig): JsxRuntime {
+  const jsx = config.esbuild?.jsx;
+  if (jsx === "classic") {
+    return "classic";
+  }
+  return "automatic";
 }

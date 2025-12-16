@@ -1,10 +1,18 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
+
+const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
+const CLI_PACKAGE_VERSION = readCliPackageVersion();
+const COLLIE_DEPENDENCIES =
+  CLI_PACKAGE_VERSION === "latest"
+    ? ["@collie-lang/compiler", "@collie-lang/vite"]
+    : [`@collie-lang/compiler@${CLI_PACKAGE_VERSION}`, `@collie-lang/vite@${CLI_PACKAGE_VERSION}`];
 
 async function main() {
   const args = process.argv.slice(2);
@@ -46,15 +54,30 @@ async function runInit(): Promise<void> {
     throw new Error("package.json not found. Run this inside a Vite+React project.");
   }
 
+  const pkgJsonRaw = await fs.readFile(packageJsonPath, "utf8");
+  const projectPackage = JSON.parse(pkgJsonRaw);
+  const viteInfo = getViteDependencyInfo(projectPackage);
+
   const pkgManager = detectPackageManager(projectRoot);
   console.log(pc.cyan(`Installing dev dependencies with ${pkgManager}...`));
-  await installDevDependencies(pkgManager, projectRoot, ["@collie-lang/compiler", "@collie-lang/vite"]);
+  await installDevDependencies(pkgManager, projectRoot, COLLIE_DEPENDENCIES);
 
-  console.log(pc.cyan("Patching vite.config.ts..."));
-  await patchViteConfig(projectRoot);
+  const configPath = findViteConfigFile(projectRoot);
+  if (!configPath) {
+    throw new Error(
+      "Could not find a Vite config (vite.config.ts/mts/js/mjs). Add collie() manually to your plugins."
+    );
+  }
+
+  const relativeConfig = path.relative(projectRoot, configPath);
+  console.log(pc.cyan(`Patching ${relativeConfig || path.basename(configPath)}...`));
+  await patchViteConfig(configPath);
 
   console.log(pc.cyan("Writing src/collie.d.ts..."));
   await ensureCollieDeclaration(projectRoot);
+
+  maybeWarnAboutViteVersion(viteInfo);
+  printNextSteps(pkgManager, configPath);
 }
 
 function detectPackageManager(root: string): PackageManager {
@@ -73,31 +96,20 @@ async function installDevDependencies(packageManager: PackageManager, cwd: strin
   await runCommand(packageManager, argsByManager[packageManager], cwd);
 }
 
-async function patchViteConfig(root: string): Promise<void> {
-  const configPath = path.join(root, "vite.config.ts");
-  if (!existsSync(configPath)) {
-    throw new Error("vite.config.ts not found. Add Collie manually to your Vite config.");
-  }
-
+async function patchViteConfig(configPath: string): Promise<void> {
   let contents = await fs.readFile(configPath, "utf8");
   let changed = false;
 
   if (!contents.includes("@collie-lang/vite")) {
-    const importStatement = `import collie from "@collie-lang/vite";\n`;
-    const importMatches = [...contents.matchAll(/^import.*$/gm)];
-    const insertPos =
-      importMatches.length > 0
-        ? computeInsertPos(contents, importMatches[importMatches.length - 1])
-        : 0;
-    contents = contents.slice(0, insertPos) + importStatement + contents.slice(insertPos);
+    contents = injectImport(contents);
     changed = true;
   }
 
-  if (!contents.includes("collie(")) {
+  if (!/\bcollie\s*\(/.test(contents)) {
     const updated = injectColliePlugin(contents);
     if (!updated) {
       throw new Error(
-        "Could not find plugins array in vite.config.ts. Add collie() manually to your plugins list."
+        "Could not find a plugins array in your Vite config. Add collie() manually to your plugins list."
       );
     }
     contents = updated;
@@ -110,57 +122,56 @@ async function patchViteConfig(root: string): Promise<void> {
 }
 
 function injectColliePlugin(source: string): string | null {
-  const pluginsIndex = source.indexOf("plugins");
-  if (pluginsIndex === -1) return null;
+  const pluginPattern = /plugins\s*[:=]\s*\[/g;
+  let match: RegExpExecArray | null;
 
-  const bracketStart = source.indexOf("[", pluginsIndex);
-  if (bracketStart === -1) return null;
+  while ((match = pluginPattern.exec(source)) !== null) {
+    const bracketIndex = match.index + match[0].length - 1;
+    const updated = insertPluginIntoArray(source, bracketIndex);
+    if (updated) {
+      return updated;
+    }
+  }
 
+  return null;
+}
+
+function insertPluginIntoArray(source: string, bracketStart: number): string | null {
   const bracketEnd = findMatchingBracket(source, bracketStart);
   if (bracketEnd === -1) return null;
 
   const before = source.slice(0, bracketStart + 1);
   const inside = source.slice(bracketStart + 1, bracketEnd);
   const after = source.slice(bracketEnd);
+  const trimmedInside = inside.trim();
 
-  const lineStart = source.lastIndexOf("\n", pluginsIndex);
-  const indentMatch = source.slice(lineStart + 1, pluginsIndex).match(/^\s*/);
+  const lineStart = source.lastIndexOf("\n", bracketStart);
+  const indentMatch = source.slice(lineStart + 1, bracketStart).match(/^\s*/);
   const baseIndent = indentMatch ? indentMatch[0] : "";
   const entryIndent = `${baseIndent}  `;
 
-  const leadingWhitespaceMatch = inside.match(/^\s*/);
-  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : "";
-  const trimmedInside = inside.trim();
-  const trailingWhitespaceMatch = inside.match(/\s*$/);
-  const trailingWhitespace = trailingWhitespaceMatch ? trailingWhitespaceMatch[0] : "";
-  const beforeTrailing = inside.slice(0, inside.length - trailingWhitespace.length);
-  const hasMultiline = inside.includes("\n");
-  const closingWhitespace = trailingWhitespace || (hasMultiline ? `\n${baseIndent}` : "");
-
   if (!trimmedInside) {
-    const insertion = `${leadingWhitespace}\n${entryIndent}collie()${closingWhitespace}`;
-    return before + insertion + after;
+    const insertion = `\n${entryIndent}collie()\n${baseIndent}`;
+    return `${before}${insertion}${after}`;
   }
 
-  if (hasMultiline) {
-    const needsComma = !beforeTrailing.trimEnd().endsWith(",");
-    const withoutTrailing = beforeTrailing.trimEnd();
-    const insertion = `${needsComma ? "," : ""}\n${entryIndent}collie()`;
-    const restored = `${withoutTrailing}${insertion}${closingWhitespace}`;
-    return before + restored + after;
-  }
+  const afterOpenIndex = bracketStart + 1;
+  const rest = source.slice(afterOpenIndex, bracketEnd);
+  const leadingWhitespaceMatch = rest.match(/^\s*/);
+  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : "";
+  const isMultiline = leadingWhitespace.includes("\n");
+  const insertText = isMultiline
+    ? `\n${entryIndent}collie(),`
+    : ` collie(),${needsTrailingSpace(rest) ? " " : ""}`;
 
-  const needsComma = !trimmedInside.endsWith(",");
-  const separator = needsComma ? (trimmedInside.length ? ", " : "") : " ";
-  const compact = `${trimmedInside}${separator}collie()`;
-  return `${before}${leadingWhitespace}${compact}${closingWhitespace}${after}`;
+  return `${source.slice(0, afterOpenIndex)}${insertText}${source.slice(afterOpenIndex)}`;
 }
 
-function computeInsertPos(content: string, match: RegExpMatchArray): number {
-  let pos = (match.index ?? 0) + match[0].length;
-  if (content[pos] === "\r") pos += 1;
-  if (content[pos] === "\n") pos += 1;
-  return pos;
+function needsTrailingSpace(rest: string): boolean {
+  const trimmed = rest.trimStart();
+  if (!trimmed.length) return false;
+  const nextChar = trimmed[0];
+  return nextChar !== "," && nextChar !== " ";
 }
 
 function findMatchingBracket(text: string, openIndex: number): number {
@@ -181,7 +192,9 @@ async function ensureCollieDeclaration(root: string): Promise<void> {
   if (existsSync(target)) return;
   await fs.mkdir(path.dirname(target), { recursive: true });
 
-  const declaration = `declare module "*.collie" {
+  const declaration = `// Allows importing Collie templates as React components.
+// Customize this typing if your templates expose specific props.
+declare module "*.collie" {
   import type { ComponentType } from "react";
   const component: ComponentType<Record<string, unknown>>;
   export default component;
@@ -189,6 +202,79 @@ async function ensureCollieDeclaration(root: string): Promise<void> {
 `;
 
   await fs.writeFile(target, declaration, "utf8");
+}
+
+function findViteConfigFile(root: string): string | null {
+  for (const file of VITE_CONFIG_FILES) {
+    const candidate = path.join(root, file);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function injectImport(source: string): string {
+  const importStatement = `import collie from "@collie-lang/vite";\n`;
+  const importMatches = [...source.matchAll(/^import.*$/gm)];
+  const insertPos =
+    importMatches.length > 0 ? computeInsertPos(source, importMatches[importMatches.length - 1]) : 0;
+  return source.slice(0, insertPos) + importStatement + source.slice(insertPos);
+}
+
+function computeInsertPos(content: string, match: RegExpMatchArray): number {
+  let pos = (match.index ?? 0) + match[0].length;
+  if (content[pos] === "\r") pos += 1;
+  if (content[pos] === "\n") pos += 1;
+  return pos;
+}
+
+function readCliPackageVersion(): string {
+  try {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const pkgPath = path.resolve(dir, "..", "package.json");
+    const raw = readFileSync(pkgPath, "utf8");
+    const pkg = JSON.parse(raw);
+    return typeof pkg.version === "string" ? pkg.version : "latest";
+  } catch {
+    return "latest";
+  }
+}
+
+function getViteDependencyInfo(pkg: Record<string, any>): { range: string; major: number | null } | null {
+  const spec =
+    (pkg.devDependencies && pkg.devDependencies.vite) ||
+    (pkg.dependencies && pkg.dependencies.vite) ||
+    null;
+  if (!spec) return null;
+  const normalized = spec.replace(/^workspace:/, "").replace(/^[~^>=<\s]*/, "");
+  const match = normalized.match(/(\d+)(?:\.\d+)?/);
+  return { range: spec, major: match ? Number(match[1]) : null };
+}
+
+function maybeWarnAboutViteVersion(info: { range: string; major: number | null } | null): void {
+  if (info?.major && info.major < 7) {
+    console.log(
+      pc.yellow(
+        `! Detected Vite ${info.range}. Collie works best with Vite 7+. Consider upgrading if you run into issues.`
+      )
+    );
+  }
+}
+
+function printNextSteps(pkgManager: PackageManager, configPath: string): void {
+  const devCommand = formatDevCommand(pkgManager);
+  console.log("");
+  console.log(pc.green("Next steps:"));
+  console.log(`  - Create a Collie template under src (e.g. src/Hello.collie).`);
+  console.log(`  - Import it in your React app and run ${devCommand} to start Vite.`);
+  console.log(`  - Need to adjust plugins later? Edit ${path.basename(configPath)}.`);
+}
+
+function formatDevCommand(pkgManager: PackageManager): string {
+  if (pkgManager === "pnpm") return "pnpm dev";
+  if (pkgManager === "yarn") return "yarn dev";
+  return "npm run dev";
 }
 
 function runCommand(command: string, args: string[], cwd: string): Promise<void> {

@@ -4,7 +4,7 @@ export interface RootNode {
   props?: PropsDecl;
 }
 
-export type Node = ElementNode | TextNode | ExpressionNode | IfNode;
+export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode;
 
 export interface ElementNode {
   type: "Element";
@@ -35,11 +35,14 @@ export interface ExpressionNode {
   value: string;
 }
 
-export interface IfNode {
-  type: "If";
-  test: string;
-  consequent: Node[];
-  alternate?: Node[];
+export interface ConditionalBranch {
+  test?: string;
+  body: Node[];
+}
+
+export interface ConditionalNode {
+  type: "Conditional";
+  branches: ConditionalBranch[];
 }
 
 export interface PropsDecl {

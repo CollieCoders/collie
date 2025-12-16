@@ -11,7 +11,12 @@ export type DiagnosticCode =
   | "COLLIE201"
   | "COLLIE202"
   | "COLLIE203"
-  | "COLLIE204";
+  | "COLLIE204"
+  | "COLLIE205"
+  | "COLLIE206"
+  | "COLLIE207"
+  | "COLLIE208"
+  | "COLLIE209";
 
 export interface SourcePos {
   line: number;
@@ -29,6 +34,7 @@ export interface Diagnostic {
   message: string;
   span?: SourceSpan;
   code?: DiagnosticCode;
+  file?: string;
 }
 
 export function createSpan(line: number, col: number, length: number, lineOffset: number): SourceSpan {
