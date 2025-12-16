@@ -3,7 +3,7 @@ export interface RootNode {
   children: Node[];
 }
 
-export type Node = ElementNode | TextNode;
+export type Node = ElementNode | TextNode | ExpressionNode;
 
 export interface ElementNode {
   type: "Element";
@@ -14,5 +14,22 @@ export interface ElementNode {
 
 export interface TextNode {
   type: "Text";
+  parts: TextPart[];
+}
+
+export type TextPart = TextChunk | TextExprPart;
+
+export interface TextChunk {
+  type: "text";
+  value: string;
+}
+
+export interface TextExprPart {
+  type: "expr";
+  value: string;
+}
+
+export interface ExpressionNode {
+  type: "Expression";
   value: string;
 }

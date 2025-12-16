@@ -1,6 +1,11 @@
 export type DiagnosticSeverity = "error" | "warning";
 
-export type DiagnosticCode = "COLLIE001" | "COLLIE002" | "COLLIE003" | "COLLIE004";
+export type DiagnosticCode =
+  | "COLLIE001"
+  | "COLLIE002"
+  | "COLLIE003"
+  | "COLLIE004"
+  | "COLLIE005";
 
 export interface SourcePos {
   line: number;

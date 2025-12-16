@@ -301,6 +301,9 @@ User Pre-Flight Checklist
 User Acceptance Checklist
 - Update template to include a {{...}} child and confirm it renders (e.g., shows a prop value)
 
+### Implementation Summary
+- Added `ExpressionNode` support plus parser handling for `{{expr}}`-only lines, wiring diagnostics (COLLIE005) for malformed expressions and emitting `{expr}` in codegen so standalone expression children render.
+
 ### Stage 3.2 — Inline expressions inside text lines
 
 Objective: Support expressions embedded within | text lines:
@@ -321,6 +324,9 @@ Codegen
 
 User Acceptance Checklist
 - Confirm mixed text+expr renders correctly in the example app
+
+### Implementation Summary
+- Extended text-line parsing/codegen so `|` lines split into literal + inline `{{expr}}` parts, preserving order when emitting JSX and reporting COLLIE005 on unterminated or empty inline expressions.
 
 ## Stage 4 — Props Block
 

@@ -1,4 +1,4 @@
-import { ElementNode, Node, RootNode, TextNode } from "./ast";
+import { ElementNode, ExpressionNode, Node, RootNode, TextNode } from "./ast";
 
 export interface CodegenOptions {
   componentName: string;
@@ -33,6 +33,10 @@ function emitNode(node: Node): string {
     return emitText(node);
   }
 
+  if (node.type === "Expression") {
+    return emitExpression(node);
+  }
+
   return emitElement(node);
 }
 
@@ -43,7 +47,22 @@ function emitElement(node: ElementNode): string {
 }
 
 function emitText(node: TextNode): string {
-  return escapeText(node.value);
+  if (!node.parts.length) {
+    return "";
+  }
+
+  return node.parts
+    .map((part) => {
+      if (part.type === "text") {
+        return escapeText(part.value);
+      }
+      return `{${part.value}}`;
+    })
+    .join("");
+}
+
+function emitExpression(node: ExpressionNode): string {
+  return `{${node.value}}`;
 }
 
 function escapeText(value: string): string {
