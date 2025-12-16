@@ -1,4 +1,4 @@
-import { ElementNode, ExpressionNode, Node, RootNode, TextNode } from "./ast";
+import { ElementNode, ExpressionNode, Node, PropsDecl, RootNode, TextNode } from "./ast";
 
 export interface CodegenOptions {
   componentName: string;
@@ -21,11 +21,18 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
     jsx = `<>${root.children.map((child) => emitNode(child)).join("")}</>`;
   }
 
-  return [
-    `export default function ${componentName}(props) {`,
-    `  return ${jsx};`,
-    `}`
-  ].join("\n");
+  const parts: string[] = [];
+
+  if (root.props) {
+    parts.push(emitPropsType(root.props));
+  }
+
+  const propsAnnotation = root.props ? ": Props" : "";
+  parts.push(
+    [`export default function ${componentName}(props${propsAnnotation}) {`, `  return ${jsx};`, `}`].join("\n")
+  );
+
+  return parts.join("\n\n");
 }
 
 function emitNode(node: Node): string {
@@ -63,6 +70,19 @@ function emitText(node: TextNode): string {
 
 function emitExpression(node: ExpressionNode): string {
   return `{${node.value}}`;
+}
+
+function emitPropsType(props: PropsDecl): string {
+  if (!props.fields.length) {
+    return "export type Props = {};";
+  }
+
+  const fieldLines = props.fields.map((field) => {
+    const optional = field.optional ? "?" : "";
+    return `  ${field.name}${optional}: ${field.typeText};`;
+  });
+
+  return ["export type Props = {", ...fieldLines, "};"].join("\n");
 }
 
 function escapeText(value: string): string {

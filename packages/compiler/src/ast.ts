@@ -1,6 +1,7 @@
 export interface RootNode {
   type: "Root";
   children: Node[];
+  props?: PropsDecl;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode;
@@ -32,4 +33,14 @@ export interface TextExprPart {
 export interface ExpressionNode {
   type: "Expression";
   value: string;
+}
+
+export interface PropsDecl {
+  fields: PropsField[];
+}
+
+export interface PropsField {
+  name: string;
+  optional: boolean;
+  typeText: string;
 }

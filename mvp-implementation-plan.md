@@ -358,6 +358,9 @@ User Pre-Flight Checklist
 User Acceptance Checklist
 - A .collie file with a props block still compiles and renders
 
+### Implementation Summary
+- Added PropsDecl/PropsField AST nodes and parser handling for a single top-level `props` block (before template nodes), capturing `name?: Type` entries and surfacing COLLIE101/102 diagnostics for misplaced or malformed headers/lines.
+
 ### Stage 4.2 — Emit props TypeScript type + annotate component
 
 Objective: Use the props decl to generate a TS type and annotate component.
@@ -383,6 +386,9 @@ Rules
 User Acceptance Checklist
 - Import the template component and ensure TS typechecking doesn’t break
 - Use props inside expressions: {{props.user.name}}
+
+### Implementation Summary
+- Codegen now emits an `export type Props` definition (empty `{}` when there are no fields) and annotates the generated component parameter so compiled templates honor their declared props types.
 
 ## Stage 5 — Conditionals
 

@@ -1,4 +1,4 @@
-import { ElementNode, ExpressionNode, RootNode, TextNode } from "./ast";
+import { ElementNode, ExpressionNode, PropsField, RootNode, TextNode } from "./ast";
 import { Diagnostic, DiagnosticCode, createSpan } from "./diagnostics";
 
 export interface ParseResult {
@@ -18,6 +18,7 @@ export function parse(source: string): ParseResult {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
+  let propsBlockLevel: number | null = null;
 
   const normalized = source.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
@@ -66,6 +67,10 @@ export function parse(source: string): ParseResult {
 
     let level = indent / 2;
 
+    if (propsBlockLevel !== null && level <= propsBlockLevel) {
+      propsBlockLevel = null;
+    }
+
     const top = stack[stack.length - 1];
     if (level > top.level + 1) {
       pushDiag(
@@ -81,6 +86,54 @@ export function parse(source: string): ParseResult {
 
     while (stack.length > 1 && stack[stack.length - 1].level >= level) {
       stack.pop();
+    }
+
+    if (trimmed === "props") {
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE102",
+          "Props block must be at the top level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (root.children.length > 0 || root.props) {
+        pushDiag(
+          diagnostics,
+          "COLLIE101",
+          "Props block must appear before any template nodes.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else {
+        root.props = { fields: [] };
+        propsBlockLevel = level;
+      }
+      continue;
+    }
+
+    if (propsBlockLevel !== null && level > propsBlockLevel) {
+      if (level !== propsBlockLevel + 1) {
+        pushDiag(
+          diagnostics,
+          "COLLIE102",
+          "Props lines must be indented two spaces under the props header.",
+          lineNumber,
+          indent + 1,
+          lineOffset
+        );
+        continue;
+      }
+
+      const field = parsePropsField(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (field && root.props) {
+        root.props.fields.push(field);
+      }
+      continue;
     }
 
     const parent = stack[stack.length - 1].node;
@@ -232,6 +285,49 @@ function parseExpressionLine(
   }
 
   return { type: "Expression", value: inner };
+}
+
+function parsePropsField(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): PropsField | null {
+  const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)(\??)\s*:\s*(.+)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE102",
+      "Props lines must be in the form `name[:?] Type`.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 1)
+    );
+    return null;
+  }
+
+  const [, name, optionalFlag, typePart] = match;
+  const typeText = typePart.trim();
+  if (!typeText) {
+    pushDiag(
+      diagnostics,
+      "COLLIE102",
+      "Props lines must provide a type after the colon.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 1)
+    );
+    return null;
+  }
+
+  return {
+    name,
+    optional: optionalFlag === "?",
+    typeText
+  };
 }
 
 function parseElement(
