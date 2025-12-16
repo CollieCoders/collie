@@ -28,8 +28,9 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
   return {
     name: "collie",
     enforce: "pre",
-    configResolved(config) {
-      resolvedRuntime = options.jsxRuntime ?? inferJsxRuntime(config);
+    configResolved(_config) {
+      // resolvedRuntime = options.jsxRuntime ?? inferJsxRuntime(config);
+      resolvedRuntime = options.jsxRuntime ?? "automatic";
     },
 
     transform(source, id) {
@@ -50,12 +51,4 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       return { code: result.code, map: result.map ?? null };
     }
   };
-}
-
-function inferJsxRuntime(config: ResolvedConfig): JsxRuntime {
-  const jsx = config.esbuild?.jsx;
-  if (jsx === "classic") {
-    return "classic";
-  }
-  return "automatic";
 }
