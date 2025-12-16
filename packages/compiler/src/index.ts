@@ -1,22 +1,13 @@
-export type DiagnosticSeverity = "error" | "warning";
+import { generateModule } from "./codegen";
+import { parse } from "./parser";
+import type { Diagnostic } from "./diagnostics";
 
-export interface SourcePos {
-  line: number;
-  col: number;
-  offset: number;
-}
-
-export interface SourceSpan {
-  start: SourcePos;
-  end: SourcePos;
-}
-
-export interface Diagnostic {
-  severity: DiagnosticSeverity;
-  message: string;
-  span?: SourceSpan;
-  code?: string;
-}
+export type {
+  Diagnostic,
+  DiagnosticSeverity,
+  SourcePos,
+  SourceSpan
+} from "./diagnostics";
 
 export interface CompileOptions {
   filename?: string;
@@ -31,14 +22,20 @@ export interface CompileResult {
 }
 
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
-  // MVP stub: replace with real lexer/parser/codegen.
   const componentName = options.componentNameHint ?? "CollieTemplate";
+  const parseResult = parse(source);
+  const diagnostics = parseResult.diagnostics;
 
-  const code = `
-export default function ${componentName}(props) {
-  return null;
+  let code = createStubComponent(componentName);
+  const hasErrors = diagnostics.some((d) => d.severity === "error");
+
+  if (!hasErrors) {
+    code = generateModule(parseResult.root, { componentName });
+  }
+
+  return { code, map: undefined, diagnostics };
 }
-`.trim();
 
-  return { code, map: undefined, diagnostics: [] };
+function createStubComponent(name: string): string {
+  return [`export default function ${name}(props) {`, "  return null;", "}"].join("\n");
 }

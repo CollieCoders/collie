@@ -193,6 +193,9 @@ AST (MVP):
 
 2. No user-visible behavior change expected yet (still OK if output is stubby)
 
+### Implementation Summary
+- Added dedicated AST, diagnostics, parser, and codegen modules plus updated `packages/compiler/src/index.ts` so the compiler now routes work through structured building blocks instead of a single stub.
+
 ### Stage 2.2 — Indentation-based tree parsing (elements + text)
 
 Objective: Parse `.collie` source into AST using an indentation stack.
@@ -224,6 +227,9 @@ Objective: Parse `.collie` source into AST using an indentation stack.
 - Run: pnpm -r build
 
 - (Optional) Add a simple .collie file; compilation may not render yet until Stage 2.3
+
+### Implementation Summary
+- Implemented indentation-based parsing in `packages/compiler/src/parser.ts`, producing the Root/Element/Text AST and emitting COLLIE001–COLLIE004 diagnostics for tabs, invalid indentation, and malformed element lines.
 
 ### Stage 2.3 — Codegen: emit JSX + module wrapper
 
@@ -264,3 +270,239 @@ export default function App() {{
 - Start the dev server yourself and confirm you see Welcome from Collie”
 
 **NOTE**: (Codex must not run pnpm dev)
+
+### Implementation Summary
+- Added JSX/module generation in `packages/compiler/src/codegen.ts` and updated `compile()` to emit real React components (with fragment wrapping when needed) or fallback stubs if diagnostics contain errors, enabling .collie files with elements and text to render DOM.
+
+## Stage 3 — Expressions & Interpolation
+
+End goal of Stage 3: `{{expr}}` becomes JSX expressions `{expr}`.
+
+### Stage 3.1 — Parse expression child nodes
+
+Objective: Support a line that is purely an expression child:
+
+```collie
+div
+  {{props.user.name}}
+```
+
+Rules
+- Expression line must begin with {{ after indentation and end with matching }}
+- In MVP, allow only single-line expressions
+- Store raw inner text as ExprNode.value (trimmed)
+
+Codegen
+- ExprNode → {<raw>}
+
+User Pre-Flight Checklist
+- Stage 2 complete and example app renders basic template
+
+User Acceptance Checklist
+- Update template to include a {{...}} child and confirm it renders (e.g., shows a prop value)
+
+### Stage 3.2 — Inline expressions inside text lines
+
+Objective: Support expressions embedded within | text lines:
+
+```collie
+p | Hello {{props.user.name}}!
+```
+
+Rules
+- Only within | lines for MVP
+- Split into parts: text + expr + text
+- Represent internally as a TextNode with parts or as a MixedTextNode (implementation choice)
+
+Codegen
+- Emit children in order:
+  * text → literal
+  * expr → {expr}
+
+User Acceptance Checklist
+- Confirm mixed text+expr renders correctly in the example app
+
+## Stage 4 — Props Block
+
+End goal of Stage 4: .collie can declare props shape and the generated component is typed.
+
+### Stage 4.1 — Parse props block header
+
+Objective: Allow a props declaration at top of file:
+
+```collie
+props
+  user: User
+  isAdmin?: boolean
+```
+
+Rules
+- Must appear before any template nodes
+- Each child line matches: name(?): Type
+- Store as PropsDecl:
+  * fields: {{ name, optional, typeText }}[]
+
+Diagnostics
+- COLLIE101 props block appears after template nodes
+- COLLIE102 invalid props line
+
+User Pre-Flight Checklist
+- Stage 3 complete
+
+User Acceptance Checklist
+- A .collie file with a props block still compiles and renders
+
+### Stage 4.2 — Emit props TypeScript type + annotate component
+
+Objective: Use the props decl to generate a TS type and annotate component.
+
+Output example
+
+```tsx
+export type Props = {{
+  user: User;
+  isAdmin?: boolean;
+}};
+
+export default function UserProfileTemplate(props: Props) {{
+  return (...);
+}}
+```
+
+Rules
+- Preserve raw type text (do not parse TS)
+- If the type text is invalid TS, allow TS errors to surface (OK in MVP)
+- Keep type name stable: Props
+
+User Acceptance Checklist
+- Import the template component and ensure TS typechecking doesn’t break
+- Use props inside expressions: {{props.user.name}}
+
+## Stage 5 — Conditionals
+
+End goal of Stage 5: @if / @else compile to valid JSX.
+
+### Stage 5.1 — Parse and generate @if (cond) with no else
+
+Syntax
+
+```collie
+@if (cond)
+  div | Shown
+```
+
+AST
+- IfNode {{ test: string, consequent: Node[], alternate?: Node[] }}
+
+Codegen
+- Without else: cond && (<Fragment>...</Fragment>)
+- If the consequent is one node, fragment is optional (but fragments are acceptable for simplicity)
+
+Diagnostics
+- COLLIE201 invalid @if syntax / missing parens
+- COLLIE202 @if with empty body
+
+User Acceptance Checklist
+- Toggle the condition in the example app and confirm the branch renders
+
+Stage 5.2 — Parse and generate @else
+
+Syntax
+
+```collie
+@if (cond)
+  div | A
+@else
+  div | B
+```
+
+Rules
+- @else must immediately follow an @if block at the same indentation level
+- Else branch may contain multiple nodes
+
+Codegen
+- Ternary:
+  * cond ? (<Fragment>...</Fragment>) : (<Fragment>...</Fragment>)
+
+Diagnostics
+- COLLIE203 @else without matching @if
+- COLLIE204 @else indentation mismatch
+
+User Acceptance Checklist
+- Confirm both branches render when the condition changes
+
+## Stage 6 — Vite Plugin Hardening (MVP-level)
+
+End goal of Stage 6: Better overlay errors and developer ergonomics; no new language features.
+
+### Stage 6.1 — Improve error overlay formatting
+
+Objective
+
+- When compiler returns diagnostics with severity error, the Vite plugin throws a single error that includes:
+  * filename
+  * line/col (if present)
+  * diagnostic code + message
+
+Constraints
+- Do not break HMR
+- Do not add dependencies
+
+User Acceptance Checklist
+- Introduce an indentation error and confirm Vite overlay shows a helpful message
+
+## Stage 7 — CLI MVP (collie init)
+
+End goal of Stage 7: Minimal “wire it up for you” command for Vite+React.
+
+### Stage 7.1 — Implement collie init (minimal)
+
+Behavior
+- Intended to be run inside an existing Vite+React project directory
+- Adds dev deps:
+  * @collie-lang/compiler
+  * @collie-lang/vite
+- Patches vite.config.ts to add:
+  * import collie from "@collie-lang/vite"
+  * plugins: [react(), collie()]
+- Writes src/collie.d.ts module declaration for *.collie
+
+Constraints
+- MVP patching can be “best effort”:
+  * If config is too unusual, print instructions and exit non-zero
+- No interactive prompts required for MVP (flags later)
+
+User Pre-Flight Checklist
+- Have a clean Vite+React project to test on
+
+User Acceptance Checklist
+- Running npx @collie-lang/cli init results in a project where a .collie import works
+
+## Stage 8 — Release Prep (MVP)
+
+### Stage 8.1 — Docs pass (root + packages)
+
+Objective
+- Update root README with:
+  * what Collie is
+  * quickstart for Vite
+  * minimal syntax examples
+- Package READMEs include install + usage snippets
+
+User Acceptance Checklist
+- README instructions work when followed manually
+
+### Stage 8.2 — First public release via Changesets
+
+Objectives
+- Bump versions to 0.1.0
+- Publish packages under @collie-lang/* as public
+
+User Pre-Flight Checklist
+- npm token configured
+- changesets configured
+- Run: pnpm -r build
+
+User Acceptance Checklist
+- npm view @collie-lang/compiler shows published version
+- Fresh Vite project can install and use Collie
