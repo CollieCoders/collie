@@ -4,6 +4,12 @@ dist
 
 # workspace artifacts
 pnpm-debug.log*
+*.tsbuildinfo
+coverage/
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # examples
 examples/*/node_modules
