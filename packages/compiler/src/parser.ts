@@ -1,4 +1,4 @@
-import { ElementNode, ExpressionNode, PropsField, RootNode, TextNode } from "./ast";
+import { ElementNode, ExpressionNode, IfNode, Node, PropsField, RootNode, TextNode } from "./ast";
 import { Diagnostic, DiagnosticCode, createSpan } from "./diagnostics";
 
 export interface ParseResult {
@@ -6,9 +6,25 @@ export interface ParseResult {
   diagnostics: Diagnostic[];
 }
 
+interface IfBranchContext {
+  kind: "IfBranch";
+  owner: IfNode;
+  branch: "consequent" | "alternate";
+  children: Node[];
+}
+
+type ParentNode = RootNode | ElementNode | IfBranchContext;
+
 interface StackItem {
-  node: RootNode | ElementNode;
+  node: ParentNode;
   level: number;
+}
+
+interface IfLocation {
+  node: IfNode;
+  line: number;
+  column: number;
+  lineOffset: number;
 }
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
@@ -19,6 +35,8 @@ export function parse(source: string): ParseResult {
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
+  const pendingElse = new Map<number, IfNode>();
+  const ifLocations: IfLocation[] = [];
 
   const normalized = source.replace(/\r\n?/g, "\n");
   const lines = normalized.split("\n");
@@ -88,6 +106,16 @@ export function parse(source: string): ParseResult {
       stack.pop();
     }
 
+    const isElseLine = trimmed === "@else";
+
+    if (!isElseLine) {
+      for (const key of Array.from(pendingElse.keys())) {
+        if (key > level || key === level) {
+          pendingElse.delete(key);
+        }
+      }
+    }
+
     if (trimmed === "props") {
       if (level !== 0) {
         pushDiag(
@@ -136,7 +164,85 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    if (isElseLine) {
+      if (!pendingElse.size) {
+        pushDiag(
+          diagnostics,
+          "COLLIE203",
+          "@else must follow an @if block.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+
+      const target = pendingElse.get(level);
+      if (!target) {
+        pushDiag(
+          diagnostics,
+          "COLLIE204",
+          "@else indentation must match the preceding @if.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        const highestLevel = Math.max(...pendingElse.keys());
+        pendingElse.delete(highestLevel);
+        for (const key of Array.from(pendingElse.keys())) {
+          if (key > level) {
+            pendingElse.delete(key);
+          }
+        }
+        continue;
+      }
+
+      if (target.alternate) {
+        pushDiag(
+          diagnostics,
+          "COLLIE203",
+          "An @if block can only have one @else branch.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        pendingElse.delete(level);
+        for (const key of Array.from(pendingElse.keys())) {
+          if (key > level) {
+            pendingElse.delete(key);
+          }
+        }
+        continue;
+      }
+
+      target.alternate = [];
+      const branch = createIfBranch(target, "alternate");
+      stack.push({ node: branch, level });
+      pendingElse.delete(level);
+      for (const key of Array.from(pendingElse.keys())) {
+        if (key > level) {
+          pendingElse.delete(key);
+        }
+      }
+      continue;
+    }
+
     const parent = stack[stack.length - 1].node;
+
+    if (trimmed.startsWith("@if")) {
+      const ifNode = parseIfLine(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (ifNode) {
+        parent.children.push(ifNode);
+        const branch = createIfBranch(ifNode, "consequent");
+        stack.push({ node: branch, level });
+        pendingElse.set(level, ifNode);
+        ifLocations.push({ node: ifNode, line: lineNumber, column: indent + 1, lineOffset });
+      }
+      continue;
+    }
 
     if (lineContent.startsWith("|")) {
       const textNode = parseTextLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
@@ -161,6 +267,20 @@ export function parse(source: string): ParseResult {
 
     parent.children.push(element);
     stack.push({ node: element, level });
+  }
+
+  for (const info of ifLocations) {
+    if (info.node.consequent.length === 0) {
+      pushDiag(
+        diagnostics,
+        "COLLIE202",
+        "@if blocks must include at least one child line.",
+        info.line,
+        info.column,
+        info.lineOffset,
+        3
+      );
+    }
   }
 
   return { root, diagnostics };
@@ -285,6 +405,57 @@ function parseExpressionLine(
   }
 
   return { type: "Expression", value: inner };
+}
+
+function parseIfLine(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): IfNode | null {
+  const match = line.match(/^@if\s*\((.*)\)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE201",
+      "Invalid @if syntax. Use @if (condition).",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 3)
+    );
+    return null;
+  }
+
+  const test = match[1].trim();
+  if (!test) {
+    pushDiag(
+      diagnostics,
+      "COLLIE201",
+      "@if condition cannot be empty.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 3)
+    );
+    return null;
+  }
+
+  return { type: "If", test, consequent: [] };
+}
+
+function createIfBranch(owner: IfNode, branch: "consequent" | "alternate"): IfBranchContext {
+  const children =
+    branch === "consequent"
+      ? owner.consequent
+      : owner.alternate ?? (owner.alternate = []);
+  return {
+    kind: "IfBranch",
+    owner,
+    branch,
+    children
+  };
 }
 
 function parsePropsField(

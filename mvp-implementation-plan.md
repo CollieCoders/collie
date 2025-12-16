@@ -417,6 +417,9 @@ Diagnostics
 User Acceptance Checklist
 - Toggle the condition in the example app and confirm the branch renders
 
+### Implementation Summary
+- Added `IfNode` AST plus parser support for `@if (cond)` lines with diagnostics COLLIE201/202 (bad syntax or empty body) and wired codegen to emit `(cond) && <Fragment>` blocks so consequent nodes render conditionally.
+
 Stage 5.2 — Parse and generate @else
 
 Syntax
@@ -442,6 +445,9 @@ Diagnostics
 
 User Acceptance Checklist
 - Confirm both branches render when the condition changes
+
+### Implementation Summary
+- Parser now validates `@else` adjacency/indentation (COLLIE203/204), attaches alternate branches to the preceding `@if`, and codegen outputs ternary expressions wrapping each branch in fragments to ensure both sides render correctly.
 
 ## Stage 6 — Vite Plugin Hardening (MVP-level)
 

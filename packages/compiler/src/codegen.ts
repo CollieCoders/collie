@@ -1,4 +1,4 @@
-import { ElementNode, ExpressionNode, Node, PropsDecl, RootNode, TextNode } from "./ast";
+import { ElementNode, ExpressionNode, IfNode, Node, PropsDecl, RootNode, TextNode } from "./ast";
 
 export interface CodegenOptions {
   componentName: string;
@@ -44,6 +44,10 @@ function emitNode(node: Node): string {
     return emitExpression(node);
   }
 
+  if (node.type === "If") {
+    return emitIf(node);
+  }
+
   return emitElement(node);
 }
 
@@ -70,6 +74,26 @@ function emitText(node: TextNode): string {
 
 function emitExpression(node: ExpressionNode): string {
   return `{${node.value}}`;
+}
+
+function emitIf(node: IfNode): string {
+  const test = `(${node.test})`;
+  const consequent = emitBlock(node.consequent);
+  if (!node.alternate || node.alternate.length === 0) {
+    return `${test} && ${consequent}`;
+  }
+  const alternate = emitBlock(node.alternate);
+  return `${test} ? ${consequent} : ${alternate}`;
+}
+
+function emitBlock(children: Node[]): string {
+  if (children.length === 0) {
+    return "null";
+  }
+  if (children.length === 1) {
+    return emitNode(children[0]);
+  }
+  return `<>${children.map((child) => emitNode(child)).join("")}</>`;
 }
 
 function emitPropsType(props: PropsDecl): string {

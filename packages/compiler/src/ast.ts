@@ -4,7 +4,7 @@ export interface RootNode {
   props?: PropsDecl;
 }
 
-export type Node = ElementNode | TextNode | ExpressionNode;
+export type Node = ElementNode | TextNode | ExpressionNode | IfNode;
 
 export interface ElementNode {
   type: "Element";
@@ -33,6 +33,13 @@ export interface TextExprPart {
 export interface ExpressionNode {
   type: "Expression";
   value: string;
+}
+
+export interface IfNode {
+  type: "If";
+  test: string;
+  consequent: Node[];
+  alternate?: Node[];
 }
 
 export interface PropsDecl {
