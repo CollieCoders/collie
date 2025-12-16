@@ -469,6 +469,9 @@ Constraints
 User Acceptance Checklist
 - Introduce an indentation error and confirm Vite overlay shows a helpful message
 
+### Implementation Summary
+- Updated the Vite plugin error handling so any compiler diagnostics are reformatted into a single thrown error that always includes filename, optional line/col, and the COLLIE code, ensuring the overlay surfaces actionable details.
+
 ## Stage 7 — CLI MVP (collie init)
 
 End goal of Stage 7: Minimal “wire it up for you” command for Vite+React.
