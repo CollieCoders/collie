@@ -1,21 +1,23 @@
 {
   "name": "collie",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev",
+    "clean": "pnpm -r clean && rimraf node_modules",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "publish-packages": "changeset publish"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/CollieCoders/collie.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/CollieCoders/collie/issues"
-  },
-  "homepage": "https://github.com/CollieCoders/collie#readme"
+  "devDependencies": {
+    "@changesets/cli": "^2.27.10",
+    "@types/node": "^22.10.2",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
 }
