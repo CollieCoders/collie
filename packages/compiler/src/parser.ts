@@ -1,4 +1,4 @@
-import {
+import type {
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -8,7 +8,7 @@ import {
   RootNode,
   TextNode
 } from "./ast";
-import { Diagnostic, DiagnosticCode, createSpan } from "./diagnostics";
+import { type Diagnostic, type DiagnosticCode, createSpan } from "./diagnostics";
 
 export interface ParseResult {
   root: RootNode;
@@ -721,8 +721,9 @@ function parseElement(
   lineOffset: number,
   diagnostics: Diagnostic[]
 ): ElementNode | null {
-  const nameMatch = line.match(ELEMENT_NAME);
-  if (!nameMatch) {
+  // Split selector-style syntax first (div.welcome.big)
+  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_-]+)*/);
+  if (!selectorMatch) {
     pushDiag(
       diagnostics,
       "COLLIE004",
@@ -730,60 +731,76 @@ function parseElement(
       lineNumber,
       column,
       lineOffset,
-      line.length
+      Math.max(line.length, 1)
     );
     return null;
   }
 
-  const name = nameMatch[0];
-  let rest = line.slice(name.length);
-  const classes: string[] = [];
+  const raw = selectorMatch[0];
+  const parts = raw.split(".");
+  const name = parts[0];
+  const classes = parts.slice(1);
+
+  let rest = line.slice(raw.length);
   let inlineText: TextNode | null = null;
+  let consumed = raw.length;
 
   while (rest.length > 0) {
-    if (!rest.startsWith(".")) {
-      const pipeMatch = rest.match(/^\s*\|/);
-      if (pipeMatch) {
-        const pipeIndex = rest.indexOf("|");
-        const textColumn = column + name.length + pipeIndex;
-        const textNode = parseTextLine(
-          rest.slice(pipeIndex),
+    // consume whitespace
+    const ws = rest.match(/^\s+/);
+    if (ws) {
+      rest = rest.slice(ws[0].length);
+      consumed += ws[0].length;
+    }
+
+    if (rest.length === 0) break;
+
+    // inline text
+    if (rest.startsWith("|")) {
+      inlineText = parseTextLine(
+        rest,
+        lineNumber,
+        column + consumed,
+        lineOffset,
+        diagnostics
+      );
+      break;
+    }
+
+    // spaced class shorthand: div .foo
+    if (rest.startsWith(".")) {
+      rest = rest.slice(1);
+      consumed++;
+
+      const classMatch = rest.match(/^[A-Za-z0-9_-]+/);
+      if (!classMatch) {
+        pushDiag(
+          diagnostics,
+          "COLLIE004",
+          "Class names must contain only letters, numbers, underscores, or hyphens.",
           lineNumber,
-          textColumn,
-          lineOffset,
-          diagnostics
+          column + consumed,
+          lineOffset
         );
-        inlineText = textNode;
-        rest = "";
-        break;
+        return null;
       }
-      pushDiag(
-        diagnostics,
-        "COLLIE004",
-        "Element lines may only contain .class shorthands or inline text after the tag name.",
-        lineNumber,
-        column + name.length,
-        lineOffset
-      );
-      return null;
+
+      classes.push(classMatch[0]);
+      rest = rest.slice(classMatch[0].length);
+      consumed += classMatch[0].length;
+      continue;
     }
 
-    rest = rest.slice(1);
-    const classMatch = rest.match(CLASS_NAME);
-    if (!classMatch) {
-      pushDiag(
-        diagnostics,
-        "COLLIE004",
-        "Class names must contain only letters, numbers, underscores, or hyphens.",
-        lineNumber,
-        column + name.length + 1,
-        lineOffset
-      );
-      return null;
-    }
-
-    classes.push(classMatch[0]);
-    rest = rest.slice(classMatch[0].length);
+    // anything else is invalid
+    pushDiag(
+      diagnostics,
+      "COLLIE004",
+      "Element lines may only contain .class shorthands or inline text after the tag name.",
+      lineNumber,
+      column + consumed,
+      lineOffset
+    );
+    return null;
   }
 
   return {

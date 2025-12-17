@@ -1,4 +1,4 @@
-import {
+import type {
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -20,15 +20,20 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
 
   const parts: string[] = [];
 
+  // Classic runtime needs React in scope for JSX transforms.
   if (jsxRuntime === "classic" && templateUsesJsx(root)) {
     parts.push(`import React from "react";`);
   }
 
+  // JS-safe typedef for Props (JSDoc)
   parts.push(emitPropsType(root.props));
 
-  const propsAnnotation = ": Props";
+  // JS-safe param typing (JSDoc), so tooling can still understand Props.
+  parts.push(`/** @param {Props} props */`);
+
+  // IMPORTANT: Do not emit TypeScript annotations here.
   parts.push(
-    [`export default function ${componentName}(props${propsAnnotation}) {`, `  return ${jsx};`, `}`].join("\n")
+    [`export default function ${componentName}(props) {`, `  return ${jsx};`, `}`].join("\n")
   );
 
   return parts.join("\n\n");
@@ -152,16 +157,20 @@ function emitSingleNodeExpression(node: Node): string {
 }
 
 function emitPropsType(props?: PropsDecl): string {
+  // Emit JS-safe JSDoc typedef (Rollup can parse this, and TS tooling can read it).
   if (!props || !props.fields.length) {
-    return "export type Props = {};";
+    return "/** @typedef {{}} Props */";
   }
 
-  const fieldLines = props.fields.map((field) => {
-    const optional = field.optional ? "?" : "";
-    return `  ${field.name}${optional}: ${field.typeText};`;
-  });
+  // Build an object type like: { foo: string; bar?: number }
+  const fields = props.fields
+    .map((field) => {
+      const optional = field.optional ? "?" : "";
+      return `${field.name}${optional}: ${field.typeText}`;
+    })
+    .join("; ");
 
-  return ["export type Props = {", ...fieldLines, "};"].join("\n");
+  return `/** @typedef {{ ${fields} }} Props */`;
 }
 
 function escapeText(value: string): string {
