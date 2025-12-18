@@ -1,0 +1,25 @@
+{
+  "name": "@collie-lang/cli",
+  "version": "0.0.1",
+  "description": "Collie CLI (init a Vite project with Collie).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "collie": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(mvp) no lint configured\""
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
