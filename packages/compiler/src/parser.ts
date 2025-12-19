@@ -54,6 +54,7 @@ export function parse(source: string): ParseResult {
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
+  let sawTopLevelTemplateNode = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -146,7 +147,7 @@ export function parse(source: string): ParseResult {
           lineOffset,
           trimmed.length
         );
-      } else if (root.children.length > 0) {
+      } else if (sawTopLevelTemplateNode) {
         pushDiag(
           diagnostics,
           "COLLIE302",
@@ -176,7 +177,7 @@ export function parse(source: string): ParseResult {
           lineOffset,
           trimmed.length
         );
-      } else if (root.children.length > 0 || root.props) {
+      } else if (sawTopLevelTemplateNode || root.props) {
         pushDiag(
           diagnostics,
           "COLLIE101",
@@ -251,6 +252,9 @@ export function parse(source: string): ParseResult {
       const branch: ConditionalBranch = { test: header.test, body: [] };
       chain.branches.push(branch);
       parent.children.push(chain);
+      if (parent === root) {
+        sawTopLevelTemplateNode = true;
+      }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
         branch,
@@ -400,6 +404,9 @@ export function parse(source: string): ParseResult {
       const textNode = parseTextLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (textNode) {
         parent.children.push(textNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
       }
       continue;
     }
@@ -408,6 +415,9 @@ export function parse(source: string): ParseResult {
       const exprNode = parseExpressionLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (exprNode) {
         parent.children.push(exprNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
       }
       continue;
     }
@@ -418,6 +428,9 @@ export function parse(source: string): ParseResult {
     }
 
     parent.children.push(element);
+    if (parent === root) {
+      sawTopLevelTemplateNode = true;
+    }
     stack.push({ node: element, level });
   }
 
