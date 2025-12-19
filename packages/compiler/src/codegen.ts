@@ -1,4 +1,5 @@
 import type {
+  ClassAliasesDecl,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -16,7 +17,8 @@ export interface CodegenOptions {
 export function generateModule(root: RootNode, options: CodegenOptions): string {
   const { componentName, jsxRuntime } = options;
 
-  const jsx = renderRootChildren(root.children);
+  const aliasEnv = buildClassAliasEnvironment(root.classAliases);
+  const jsx = renderRootChildren(root.children, aliasEnv);
 
   const parts: string[] = [];
 
@@ -39,8 +41,24 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   return parts.join("\n\n");
 }
 
-function renderRootChildren(children: Node[]): string {
-  return emitNodesExpression(children);
+function buildClassAliasEnvironment(
+  decl?: ClassAliasesDecl
+): Map<string, readonly string[]> {
+  const env = new Map<string, readonly string[]>();
+  if (!decl) {
+    return env;
+  }
+  for (const alias of decl.aliases) {
+    env.set(alias.name, alias.classes);
+  }
+  return env;
+}
+
+function renderRootChildren(
+  children: Node[],
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  return emitNodesExpression(children, aliasEnv);
 }
 
 function templateUsesJsx(root: RootNode): boolean {
@@ -73,7 +91,7 @@ function branchUsesJsx(branch: ConditionalBranch): boolean {
   return branch.body.some((child) => nodeUsesJsx(child));
 }
 
-function emitNodeInJsx(node: Node): string {
+function emitNodeInJsx(node: Node, aliasEnv: Map<string, readonly string[]>): string {
   if (node.type === "Text") {
     return emitText(node);
   }
@@ -81,15 +99,39 @@ function emitNodeInJsx(node: Node): string {
     return `{${node.value}}`;
   }
   if (node.type === "Conditional") {
-    return `{${emitConditionalExpression(node)}}`;
+    return `{${emitConditionalExpression(node, aliasEnv)}}`;
   }
-  return emitElement(node);
+  return emitElement(node, aliasEnv);
 }
 
-function emitElement(node: ElementNode): string {
-  const classAttr = node.classes.length ? ` className="${node.classes.join(" ")}"` : "";
-  const children = node.children.map((child) => emitNodeInJsx(child)).join("");
+function emitElement(
+  node: ElementNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  const expanded = expandClasses(node.classes, aliasEnv);
+  const classAttr = expanded.length ? ` className="${expanded.join(" ")}"` : "";
+  const children = node.children.map((child) => emitNodeInJsx(child, aliasEnv)).join("");
   return `<${node.name}${classAttr}>${children}</${node.name}>`;
+}
+
+function expandClasses(
+  classes: readonly string[],
+  aliasEnv: Map<string, readonly string[]>
+): string[] {
+  const result: string[] = [];
+  for (const cls of classes) {
+    const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (!match) {
+      result.push(cls);
+      continue;
+    }
+    const aliasClasses = aliasEnv.get(match[1]);
+    if (!aliasClasses) {
+      continue;
+    }
+    result.push(...aliasClasses);
+  }
+  return result;
 }
 
 function emitText(node: TextNode): string {
@@ -107,16 +149,21 @@ function emitText(node: TextNode): string {
     .join("");
 }
 
-function emitConditionalExpression(node: ConditionalNode): string {
+function emitConditionalExpression(
+  node: ConditionalNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
   if (!node.branches.length) {
     return "null";
   }
   const first = node.branches[0];
   if (node.branches.length === 1 && first.test) {
-    return `(${first.test}) && ${emitBranchExpression(first)}`;
+    return `(${first.test}) && ${emitBranchExpression(first, aliasEnv)}`;
   }
   const hasElse = node.branches[node.branches.length - 1].test === undefined;
-  let fallback = hasElse ? emitBranchExpression(node.branches[node.branches.length - 1]) : "null";
+  let fallback = hasElse
+    ? emitBranchExpression(node.branches[node.branches.length - 1], aliasEnv)
+    : "null";
   const startIndex = hasElse ? node.branches.length - 2 : node.branches.length - 1;
   if (startIndex < 0) {
     return fallback;
@@ -124,36 +171,45 @@ function emitConditionalExpression(node: ConditionalNode): string {
   for (let i = startIndex; i >= 0; i--) {
     const branch = node.branches[i];
     const test = branch.test ?? "false";
-    fallback = `(${test}) ? ${emitBranchExpression(branch)} : ${fallback}`;
+    fallback = `(${test}) ? ${emitBranchExpression(branch, aliasEnv)} : ${fallback}`;
   }
   return fallback;
 }
 
-function emitBranchExpression(branch: ConditionalBranch): string {
-  return emitNodesExpression(branch.body);
+function emitBranchExpression(
+  branch: ConditionalBranch,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  return emitNodesExpression(branch.body, aliasEnv);
 }
 
-function emitNodesExpression(children: Node[]): string {
+function emitNodesExpression(
+  children: Node[],
+  aliasEnv: Map<string, readonly string[]>
+): string {
   if (children.length === 0) {
     return "null";
   }
   if (children.length === 1) {
-    return emitSingleNodeExpression(children[0]);
+    return emitSingleNodeExpression(children[0], aliasEnv);
   }
-  return `<>${children.map((child) => emitNodeInJsx(child)).join("")}</>`;
+  return `<>${children.map((child) => emitNodeInJsx(child, aliasEnv)).join("")}</>`;
 }
 
-function emitSingleNodeExpression(node: Node): string {
+function emitSingleNodeExpression(
+  node: Node,
+  aliasEnv: Map<string, readonly string[]>
+): string {
   if (node.type === "Expression") {
     return node.value;
   }
   if (node.type === "Conditional") {
-    return emitConditionalExpression(node);
+    return emitConditionalExpression(node, aliasEnv);
   }
   if (node.type === "Text") {
-    return `<>${emitNodeInJsx(node)}</>`;
+    return `<>${emitNodeInJsx(node, aliasEnv)}</>`;
   }
-  return emitNodeInJsx(node);
+  return emitNodeInJsx(node, aliasEnv);
 }
 
 function emitPropsType(props?: PropsDecl): string {
