@@ -1,6 +1,9 @@
+import type { SourceSpan } from "./diagnostics";
+
 export interface ClassAliasDecl {
   name: string;
   classes: string[];
+  span?: SourceSpan;
 }
 
 export interface ClassAliasesDecl {
@@ -20,6 +23,7 @@ export interface ElementNode {
   type: "Element";
   name: string;
   classes: string[];
+  classSpans?: SourceSpan[];
   children: Node[];
 }
 

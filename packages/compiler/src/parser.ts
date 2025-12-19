@@ -1,5 +1,6 @@
 import type {
   ClassAliasDecl,
+  ClassAliasesDecl,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -9,7 +10,7 @@ import type {
   RootNode,
   TextNode
 } from "./ast";
-import { type Diagnostic, type DiagnosticCode, createSpan } from "./diagnostics";
+import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
 
 export interface ParseResult {
   root: RootNode;
@@ -45,7 +46,7 @@ interface ConditionalChainState {
 }
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
-const CLASS_NAME = /^[A-Za-z0-9_-]+/;
+const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
 
 export function parse(source: string): ParseResult {
   const diagnostics: Diagnostic[] = [];
@@ -419,6 +420,11 @@ export function parse(source: string): ParseResult {
     parent.children.push(element);
     stack.push({ node: element, level });
   }
+
+  if (root.classAliases) {
+    validateClassAliasDefinitions(root.classAliases, diagnostics);
+  }
+  validateClassAliasUsages(root, diagnostics);
 
   for (const info of branchLocations) {
     if (info.branch.body.length === 0) {
@@ -812,7 +818,11 @@ function parseClassAliasLine(
     return null;
   }
 
-  return { name: rawName, classes };
+  const nameIndex = line.indexOf(rawName);
+  const nameColumn = nameIndex >= 0 ? column + nameIndex : column;
+  const span = createSpan(lineNumber, nameColumn, rawName.length, lineOffset);
+
+  return { name: rawName, classes, span };
 }
 
 function parseAliasClasses(
@@ -859,6 +869,80 @@ function parseAliasClasses(
   return classes;
 }
 
+function validateClassAliasDefinitions(
+  classAliases: ClassAliasesDecl,
+  diagnostics: Diagnostic[]
+): void {
+  const seen = new Map<string, ClassAliasDecl>();
+  for (const alias of classAliases.aliases) {
+    const previous = seen.get(alias.name);
+    if (previous) {
+      if (alias.span) {
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE306",
+          message: `Duplicate class alias '${alias.name}'.`,
+          span: alias.span
+        });
+      } else {
+        pushDiag(diagnostics, "COLLIE306", `Duplicate class alias '${alias.name}'.`, 1, 1, 0);
+      }
+      continue;
+    }
+    seen.set(alias.name, alias);
+  }
+}
+
+function validateClassAliasUsages(root: RootNode, diagnostics: Diagnostic[]): void {
+  const defined = new Set<string>(root.classAliases?.aliases.map((alias) => alias.name) ?? []);
+  for (const child of root.children) {
+    validateNodeClassAliases(child, defined, diagnostics);
+  }
+}
+
+function validateNodeClassAliases(
+  node: Node,
+  defined: Set<string>,
+  diagnostics: Diagnostic[]
+): void {
+  if (node.type === "Element") {
+    const spans = node.classSpans ?? [];
+    node.classes.forEach((cls, index) => {
+      const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+      if (!match) {
+        return;
+      }
+      const aliasName = match[1];
+      if (defined.has(aliasName)) {
+        return;
+      }
+      const span = spans[index];
+      if (span) {
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE307",
+          message: `Undefined class alias '${aliasName}'.`,
+          span
+        });
+      } else {
+        pushDiag(diagnostics, "COLLIE307", `Undefined class alias '${aliasName}'.`, 1, 1, 0);
+      }
+    });
+    for (const child of node.children) {
+      validateNodeClassAliases(child, defined, diagnostics);
+    }
+    return;
+  }
+
+  if (node.type === "Conditional") {
+    for (const branch of node.branches) {
+      for (const child of branch.body) {
+        validateNodeClassAliases(child, defined, diagnostics);
+      }
+    }
+  }
+}
+
 function parseElement(
   line: string,
   lineNumber: number,
@@ -867,7 +951,7 @@ function parseElement(
   diagnostics: Diagnostic[]
 ): ElementNode | null {
   // Split selector-style syntax first (div.welcome.big)
-  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_-]+)*/);
+  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_$-]+)*/);
   if (!selectorMatch) {
     pushDiag(
       diagnostics,
@@ -882,9 +966,25 @@ function parseElement(
   }
 
   const raw = selectorMatch[0];
-  const parts = raw.split(".");
-  const name = parts[0];
-  const classes = parts.slice(1);
+  const name = selectorMatch[1] ?? raw;
+  const classes: string[] = [];
+  const classSpans: SourceSpan[] = [];
+
+  let selectorCursor = name.length;
+  while (selectorCursor < raw.length) {
+    if (raw[selectorCursor] !== ".") {
+      break;
+    }
+    const tokenStart = selectorCursor + 1;
+    let tokenEnd = tokenStart;
+    while (tokenEnd < raw.length && /[A-Za-z0-9_$-]/.test(raw[tokenEnd])) {
+      tokenEnd++;
+    }
+    const token = raw.slice(tokenStart, tokenEnd);
+    classes.push(token);
+    classSpans.push(createSpan(lineNumber, column + tokenStart, token.length, lineOffset));
+    selectorCursor = tokenEnd;
+  }
 
   let rest = line.slice(raw.length);
   let inlineText: TextNode | null = null;
@@ -917,12 +1017,12 @@ function parseElement(
       rest = rest.slice(1);
       consumed++;
 
-      const classMatch = rest.match(/^[A-Za-z0-9_-]+/);
+      const classMatch = rest.match(CLASS_NAME);
       if (!classMatch) {
         pushDiag(
           diagnostics,
           "COLLIE004",
-          "Class names must contain only letters, numbers, underscores, or hyphens.",
+          "Class names must contain only letters, numbers, underscores, hyphens, or `$` (for aliases).",
           lineNumber,
           column + consumed,
           lineOffset
@@ -930,7 +1030,10 @@ function parseElement(
         return null;
       }
 
-      classes.push(classMatch[0]);
+      const token = classMatch[0];
+      const tokenColumn = column + consumed;
+      classes.push(token);
+      classSpans.push(createSpan(lineNumber, tokenColumn, token.length, lineOffset));
       rest = rest.slice(classMatch[0].length);
       consumed += classMatch[0].length;
       continue;
@@ -948,12 +1051,16 @@ function parseElement(
     return null;
   }
 
-  return {
+  const element: ElementNode = {
     type: "Element",
     name,
     classes,
     children: inlineText ? [inlineText] : []
   };
+  if (classSpans.length) {
+    element.classSpans = classSpans;
+  }
+  return element;
 }
 
 function pushDiag(
