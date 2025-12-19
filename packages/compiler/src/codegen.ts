@@ -118,6 +118,8 @@ function expandClasses(
   classes: readonly string[],
   aliasEnv: Map<string, readonly string[]>
 ): string[] {
+  // Alias expansion is a pure compile-time macro. The parser guarantees diagnostics for
+  // undefined aliases, so codegen simply replaces $alias tokens with their literal class list.
   const result: string[] = [];
   for (const cls of classes) {
     const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
