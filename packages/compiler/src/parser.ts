@@ -113,7 +113,9 @@ export function parse(source: string): ParseResult {
     }
 
     const top = stack[stack.length - 1];
-    if (level > top.level + 1) {
+    const isInPropsBlock = propsBlockLevel !== null && level > propsBlockLevel;
+    const isInClassesBlock = classesBlockLevel !== null && level > classesBlockLevel;
+    if (level > top.level + 1 && !isInPropsBlock && !isInClassesBlock) {
       pushDiag(
         diagnostics,
         "COLLIE003",
@@ -611,85 +613,142 @@ function parseTextLine(
   diagnostics: Diagnostic[]
 ): TextNode | null {
   const trimmed = lineContent.trimEnd();
-  let payload = trimmed.slice(1);
-  let payloadColumn = column + 1;
+  let payload = trimmed;
+  let payloadColumn = column;
 
-  if (payload.startsWith(" ")) {
+  if (payload.startsWith("|")) {
     payload = payload.slice(1);
     payloadColumn += 1;
+
+    if (payload.startsWith(" ")) {
+      payload = payload.slice(1);
+      payloadColumn += 1;
+    }
   }
 
+  return parseTextPayload(payload, lineNumber, payloadColumn, lineOffset, diagnostics);
+}
+
+function parseTextPayload(
+  payload: string,
+  lineNumber: number,
+  payloadColumn: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): TextNode | null {
   const parts: TextNode["parts"] = [];
   let cursor = 0;
+  let textBuffer = "";
+
+  const flushText = (): void => {
+    if (textBuffer.length) {
+      parts.push({ type: "text", value: textBuffer });
+      textBuffer = "";
+    }
+  };
 
   while (cursor < payload.length) {
-    const nextOpen = payload.indexOf("{{", cursor);
-    const nextClose = payload.indexOf("}}", cursor);
+    const ch = payload[cursor];
 
-    if (nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen)) {
-      const leadingText = payload.slice(cursor, nextClose);
-      if (leadingText.length) {
-        parts.push({ type: "text", value: leadingText });
+    if (ch === "{") {
+      flushText();
+      if (payload[cursor + 1] === "{") {
+        const exprStart = cursor;
+        const exprEnd = payload.indexOf("}}", cursor + 2);
+        if (exprEnd === -1) {
+          pushDiag(
+            diagnostics,
+            "COLLIE005",
+            "Inline expression must end with }}.",
+            lineNumber,
+            payloadColumn + exprStart,
+            lineOffset
+          );
+          textBuffer += payload.slice(exprStart);
+          break;
+        }
+        const inner = payload.slice(exprStart + 2, exprEnd).trim();
+        if (!inner) {
+          pushDiag(
+            diagnostics,
+            "COLLIE005",
+            "Inline expression cannot be empty.",
+            lineNumber,
+            payloadColumn + exprStart,
+            lineOffset,
+            exprEnd - exprStart
+          );
+        } else {
+          parts.push({ type: "expr", value: inner });
+        }
+        cursor = exprEnd + 2;
+        continue;
       }
-      pushDiag(
-        diagnostics,
-        "COLLIE005",
-        "Inline expression closing }} must follow an opening {{.",
-        lineNumber,
-        payloadColumn + nextClose,
-        lineOffset,
-        2
-      );
-      cursor = nextClose + 2;
+
+      const exprStart = cursor;
+      const exprEnd = payload.indexOf("}", cursor + 1);
+      if (exprEnd === -1) {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression must end with }.",
+          lineNumber,
+          payloadColumn + exprStart,
+          lineOffset
+        );
+        textBuffer += payload.slice(exprStart);
+        break;
+      }
+      const inner = payload.slice(exprStart + 1, exprEnd).trim();
+      if (!inner) {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression cannot be empty.",
+          lineNumber,
+          payloadColumn + exprStart,
+          lineOffset,
+          exprEnd - exprStart
+        );
+      } else {
+        parts.push({ type: "expr", value: inner });
+      }
+      cursor = exprEnd + 1;
       continue;
     }
 
-    if (nextOpen === -1) {
-      const text = payload.slice(cursor);
-      if (text.length) {
-        parts.push({ type: "text", value: text });
+    if (ch === "}") {
+      flushText();
+      if (payload[cursor + 1] === "}") {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression closing }} must follow an opening {{.",
+          lineNumber,
+          payloadColumn + cursor,
+          lineOffset,
+          2
+        );
+        cursor += 2;
+        continue;
       }
-      break;
-    }
-
-    if (nextOpen > cursor) {
-      parts.push({ type: "text", value: payload.slice(cursor, nextOpen) });
-    }
-
-    const exprEnd = payload.indexOf("}}", nextOpen + 2);
-    if (exprEnd === -1) {
       pushDiag(
         diagnostics,
         "COLLIE005",
-        "Inline expression must end with }}.",
+        "Inline expression closing } must follow an opening {.",
         lineNumber,
-        payloadColumn + nextOpen,
+        payloadColumn + cursor,
         lineOffset
       );
-      const remainder = payload.slice(nextOpen);
-      if (remainder.length) {
-        parts.push({ type: "text", value: remainder });
-      }
-      break;
+      cursor += 1;
+      continue;
     }
 
-    const inner = payload.slice(nextOpen + 2, exprEnd).trim();
-    if (!inner) {
-      pushDiag(
-        diagnostics,
-        "COLLIE005",
-        "Inline expression cannot be empty.",
-        lineNumber,
-        payloadColumn + nextOpen,
-        lineOffset,
-        exprEnd - nextOpen
-      );
-    } else {
-      parts.push({ type: "expr", value: inner });
-    }
-
-    cursor = exprEnd + 2;
+    textBuffer += ch;
+    cursor += 1;
   }
+
+  flushText();
 
   return { type: "Text", parts };
 }
@@ -1013,15 +1072,27 @@ function parseElement(
 
     if (rest.length === 0) break;
 
-    // inline text
-    if (rest.startsWith("|")) {
-      inlineText = parseTextLine(
+    // inline text (pipe-style or bare)
+    if (!rest.startsWith(".")) {
+      const textNode = parseTextLine(
         rest,
         lineNumber,
         column + consumed,
         lineOffset,
         diagnostics
       );
+      if (!textNode) {
+        pushDiag(
+          diagnostics,
+          "COLLIE004",
+          "Element lines may only contain .class shorthands or inline text after the tag name.",
+          lineNumber,
+          column + consumed,
+          lineOffset
+        );
+        return null;
+      }
+      inlineText = textNode;
       break;
     }
 
