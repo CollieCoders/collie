@@ -319,7 +319,10 @@ function emitSingleNodeExpression(
 
 function emitPropsType(props?: PropsDecl): string {
   // Emit JS-safe JSDoc typedef (Rollup can parse this, and TS tooling can read it).
-  if (!props || !props.fields.length) {
+  if (!props) {
+    return "/** @typedef {any} Props */";
+  }
+  if (!props.fields.length) {
     return "/** @typedef {{}} Props */";
   }
 
