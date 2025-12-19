@@ -1,7 +1,17 @@
+export interface ClassAliasDecl {
+  name: string;
+  classes: string[];
+}
+
+export interface ClassAliasesDecl {
+  aliases: ClassAliasDecl[];
+}
+
 export interface RootNode {
   type: "Root";
   children: Node[];
   props?: PropsDecl;
+  classAliases?: ClassAliasesDecl;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode;
