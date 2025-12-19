@@ -1,7 +1,20 @@
+import type { SourceSpan } from "./diagnostics";
+
+export interface ClassAliasDecl {
+  name: string;
+  classes: string[];
+  span?: SourceSpan;
+}
+
+export interface ClassAliasesDecl {
+  aliases: ClassAliasDecl[];
+}
+
 export interface RootNode {
   type: "Root";
   children: Node[];
   props?: PropsDecl;
+  classAliases?: ClassAliasesDecl;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode;
@@ -10,6 +23,7 @@ export interface ElementNode {
   type: "Element";
   name: string;
   classes: string[];
+  classSpans?: SourceSpan[];
   children: Node[];
 }
 

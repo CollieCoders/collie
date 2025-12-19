@@ -18,3 +18,5 @@ examples/*/.vite
 
 # changesets
 .changeset/pre.json
+
+classes-implementation-plan.md

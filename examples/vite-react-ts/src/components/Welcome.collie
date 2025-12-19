@@ -1,2 +1,10 @@
-div .welcome
-  h3 | Welcome from Collie
+props
+  name
+
+classes
+  homeContainer = px-30.mx-10.justify-center
+  homeHeader    = mb-10.pt-20
+
+div.$homeContainer
+  h3.$homeHeader | Welcome from Collie
+  h6 | Hello, {{ name }}!

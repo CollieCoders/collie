@@ -1,4 +1,6 @@
 import type {
+  ClassAliasDecl,
+  ClassAliasesDecl,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -8,7 +10,7 @@ import type {
   RootNode,
   TextNode
 } from "./ast";
-import { type Diagnostic, type DiagnosticCode, createSpan } from "./diagnostics";
+import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
 
 export interface ParseResult {
   root: RootNode;
@@ -44,13 +46,15 @@ interface ConditionalChainState {
 }
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
-const CLASS_NAME = /^[A-Za-z0-9_-]+/;
+const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
 
 export function parse(source: string): ParseResult {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
+  let classesBlockLevel: number | null = null;
+  let sawTopLevelTemplateNode = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -104,9 +108,14 @@ export function parse(source: string): ParseResult {
     if (propsBlockLevel !== null && level <= propsBlockLevel) {
       propsBlockLevel = null;
     }
+    if (classesBlockLevel !== null && level <= classesBlockLevel) {
+      classesBlockLevel = null;
+    }
 
     const top = stack[stack.length - 1];
-    if (level > top.level + 1) {
+    const isInPropsBlock = propsBlockLevel !== null && level > propsBlockLevel;
+    const isInClassesBlock = classesBlockLevel !== null && level > classesBlockLevel;
+    if (level > top.level + 1 && !isInPropsBlock && !isInClassesBlock) {
       pushDiag(
         diagnostics,
         "COLLIE003",
@@ -129,6 +138,36 @@ export function parse(source: string): ParseResult {
       conditionalChains.delete(level);
     }
 
+    if (trimmed === "classes") {
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE301",
+          "Classes block must be at the top level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (sawTopLevelTemplateNode) {
+        pushDiag(
+          diagnostics,
+          "COLLIE302",
+          "Classes block must appear before any template nodes.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else {
+        if (!root.classAliases) {
+          root.classAliases = { aliases: [] };
+        }
+        classesBlockLevel = level;
+      }
+      continue;
+    }
+
     if (trimmed === "props") {
       if (level !== 0) {
         pushDiag(
@@ -140,7 +179,7 @@ export function parse(source: string): ParseResult {
           lineOffset,
           trimmed.length
         );
-      } else if (root.children.length > 0 || root.props) {
+      } else if (sawTopLevelTemplateNode || root.props) {
         pushDiag(
           diagnostics,
           "COLLIE101",
@@ -177,6 +216,26 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    if (classesBlockLevel !== null && level > classesBlockLevel) {
+      if (level !== classesBlockLevel + 1) {
+        pushDiag(
+          diagnostics,
+          "COLLIE303",
+          "Classes lines must be indented two spaces under the classes header.",
+          lineNumber,
+          indent + 1,
+          lineOffset
+        );
+        continue;
+      }
+
+      const alias = parseClassAliasLine(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (alias && root.classAliases) {
+        root.classAliases.aliases.push(alias);
+      }
+      continue;
+    }
+
     const parent = stack[stack.length - 1].node;
 
     if (trimmed.startsWith("@if")) {
@@ -195,6 +254,9 @@ export function parse(source: string): ParseResult {
       const branch: ConditionalBranch = { test: header.test, body: [] };
       chain.branches.push(branch);
       parent.children.push(chain);
+      if (parent === root) {
+        sawTopLevelTemplateNode = true;
+      }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
         branch,
@@ -344,6 +406,9 @@ export function parse(source: string): ParseResult {
       const textNode = parseTextLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (textNode) {
         parent.children.push(textNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
       }
       continue;
     }
@@ -352,6 +417,9 @@ export function parse(source: string): ParseResult {
       const exprNode = parseExpressionLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (exprNode) {
         parent.children.push(exprNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
       }
       continue;
     }
@@ -362,8 +430,16 @@ export function parse(source: string): ParseResult {
     }
 
     parent.children.push(element);
+    if (parent === root) {
+      sawTopLevelTemplateNode = true;
+    }
     stack.push({ node: element, level });
   }
+
+  if (root.classAliases) {
+    validateClassAliasDefinitions(root.classAliases, diagnostics);
+  }
+  validateClassAliasUsages(root, diagnostics);
 
   for (const info of branchLocations) {
     if (info.branch.body.length === 0) {
@@ -537,85 +613,142 @@ function parseTextLine(
   diagnostics: Diagnostic[]
 ): TextNode | null {
   const trimmed = lineContent.trimEnd();
-  let payload = trimmed.slice(1);
-  let payloadColumn = column + 1;
+  let payload = trimmed;
+  let payloadColumn = column;
 
-  if (payload.startsWith(" ")) {
+  if (payload.startsWith("|")) {
     payload = payload.slice(1);
     payloadColumn += 1;
+
+    if (payload.startsWith(" ")) {
+      payload = payload.slice(1);
+      payloadColumn += 1;
+    }
   }
 
+  return parseTextPayload(payload, lineNumber, payloadColumn, lineOffset, diagnostics);
+}
+
+function parseTextPayload(
+  payload: string,
+  lineNumber: number,
+  payloadColumn: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): TextNode | null {
   const parts: TextNode["parts"] = [];
   let cursor = 0;
+  let textBuffer = "";
+
+  const flushText = (): void => {
+    if (textBuffer.length) {
+      parts.push({ type: "text", value: textBuffer });
+      textBuffer = "";
+    }
+  };
 
   while (cursor < payload.length) {
-    const nextOpen = payload.indexOf("{{", cursor);
-    const nextClose = payload.indexOf("}}", cursor);
+    const ch = payload[cursor];
 
-    if (nextClose !== -1 && (nextOpen === -1 || nextClose < nextOpen)) {
-      const leadingText = payload.slice(cursor, nextClose);
-      if (leadingText.length) {
-        parts.push({ type: "text", value: leadingText });
+    if (ch === "{") {
+      flushText();
+      if (payload[cursor + 1] === "{") {
+        const exprStart = cursor;
+        const exprEnd = payload.indexOf("}}", cursor + 2);
+        if (exprEnd === -1) {
+          pushDiag(
+            diagnostics,
+            "COLLIE005",
+            "Inline expression must end with }}.",
+            lineNumber,
+            payloadColumn + exprStart,
+            lineOffset
+          );
+          textBuffer += payload.slice(exprStart);
+          break;
+        }
+        const inner = payload.slice(exprStart + 2, exprEnd).trim();
+        if (!inner) {
+          pushDiag(
+            diagnostics,
+            "COLLIE005",
+            "Inline expression cannot be empty.",
+            lineNumber,
+            payloadColumn + exprStart,
+            lineOffset,
+            exprEnd - exprStart
+          );
+        } else {
+          parts.push({ type: "expr", value: inner });
+        }
+        cursor = exprEnd + 2;
+        continue;
       }
-      pushDiag(
-        diagnostics,
-        "COLLIE005",
-        "Inline expression closing }} must follow an opening {{.",
-        lineNumber,
-        payloadColumn + nextClose,
-        lineOffset,
-        2
-      );
-      cursor = nextClose + 2;
+
+      const exprStart = cursor;
+      const exprEnd = payload.indexOf("}", cursor + 1);
+      if (exprEnd === -1) {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression must end with }.",
+          lineNumber,
+          payloadColumn + exprStart,
+          lineOffset
+        );
+        textBuffer += payload.slice(exprStart);
+        break;
+      }
+      const inner = payload.slice(exprStart + 1, exprEnd).trim();
+      if (!inner) {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression cannot be empty.",
+          lineNumber,
+          payloadColumn + exprStart,
+          lineOffset,
+          exprEnd - exprStart
+        );
+      } else {
+        parts.push({ type: "expr", value: inner });
+      }
+      cursor = exprEnd + 1;
       continue;
     }
 
-    if (nextOpen === -1) {
-      const text = payload.slice(cursor);
-      if (text.length) {
-        parts.push({ type: "text", value: text });
+    if (ch === "}") {
+      flushText();
+      if (payload[cursor + 1] === "}") {
+        pushDiag(
+          diagnostics,
+          "COLLIE005",
+          "Inline expression closing }} must follow an opening {{.",
+          lineNumber,
+          payloadColumn + cursor,
+          lineOffset,
+          2
+        );
+        cursor += 2;
+        continue;
       }
-      break;
-    }
-
-    if (nextOpen > cursor) {
-      parts.push({ type: "text", value: payload.slice(cursor, nextOpen) });
-    }
-
-    const exprEnd = payload.indexOf("}}", nextOpen + 2);
-    if (exprEnd === -1) {
       pushDiag(
         diagnostics,
         "COLLIE005",
-        "Inline expression must end with }}.",
+        "Inline expression closing } must follow an opening {.",
         lineNumber,
-        payloadColumn + nextOpen,
+        payloadColumn + cursor,
         lineOffset
       );
-      const remainder = payload.slice(nextOpen);
-      if (remainder.length) {
-        parts.push({ type: "text", value: remainder });
-      }
-      break;
+      cursor += 1;
+      continue;
     }
 
-    const inner = payload.slice(nextOpen + 2, exprEnd).trim();
-    if (!inner) {
-      pushDiag(
-        diagnostics,
-        "COLLIE005",
-        "Inline expression cannot be empty.",
-        lineNumber,
-        payloadColumn + nextOpen,
-        lineOffset,
-        exprEnd - nextOpen
-      );
-    } else {
-      parts.push({ type: "expr", value: inner });
-    }
-
-    cursor = exprEnd + 2;
+    textBuffer += ch;
+    cursor += 1;
   }
+
+  flushText();
 
   return { type: "Text", parts };
 }
@@ -714,6 +847,174 @@ function parsePropsField(
   };
 }
 
+function parseClassAliasLine(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ClassAliasDecl | null {
+  const match = line.match(/^([^=]+?)\s*=\s*(.+)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE304",
+      "Classes lines must be in the form `name = class.tokens`.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 1)
+    );
+    return null;
+  }
+
+  const rawName = match[1].trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(rawName)) {
+    pushDiag(
+      diagnostics,
+      "COLLIE305",
+      `Class alias name '${rawName}' must be a valid identifier.`,
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(rawName.length, 1)
+    );
+    return null;
+  }
+
+  const rhs = match[2];
+  const rhsIndex = line.indexOf(rhs);
+  const rhsColumn = rhsIndex >= 0 ? column + rhsIndex : column;
+  const classes = parseAliasClasses(rhs, lineNumber, rhsColumn, lineOffset, diagnostics);
+  if (!classes.length) {
+    return null;
+  }
+
+  const nameIndex = line.indexOf(rawName);
+  const nameColumn = nameIndex >= 0 ? column + nameIndex : column;
+  const span = createSpan(lineNumber, nameColumn, rawName.length, lineOffset);
+
+  return { name: rawName, classes, span };
+}
+
+function parseAliasClasses(
+  rhs: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): string[] {
+  const trimmed = rhs.trim();
+  if (!trimmed) {
+    pushDiag(
+      diagnostics,
+      "COLLIE304",
+      "Classes lines must provide one or more class tokens after '='.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(rhs.length, 1)
+    );
+    return [];
+  }
+
+  const withoutDotPrefix = trimmed.startsWith(".") ? trimmed.slice(1) : trimmed;
+  const parts = withoutDotPrefix.split(".");
+  const classes: string[] = [];
+  for (const part of parts) {
+    const token = part.trim();
+    if (!token) {
+      pushDiag(
+        diagnostics,
+        "COLLIE304",
+        "Classes lines must provide one or more class tokens after '='.",
+        lineNumber,
+        column,
+        lineOffset,
+        Math.max(rhs.length, 1)
+      );
+      return [];
+    }
+    classes.push(token);
+  }
+
+  return classes;
+}
+
+function validateClassAliasDefinitions(
+  classAliases: ClassAliasesDecl,
+  diagnostics: Diagnostic[]
+): void {
+  const seen = new Map<string, ClassAliasDecl>();
+  for (const alias of classAliases.aliases) {
+    const previous = seen.get(alias.name);
+    if (previous) {
+      if (alias.span) {
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE306",
+          message: `Duplicate class alias '${alias.name}'.`,
+          span: alias.span
+        });
+      } else {
+        pushDiag(diagnostics, "COLLIE306", `Duplicate class alias '${alias.name}'.`, 1, 1, 0);
+      }
+      continue;
+    }
+    seen.set(alias.name, alias);
+  }
+}
+
+function validateClassAliasUsages(root: RootNode, diagnostics: Diagnostic[]): void {
+  const defined = new Set<string>(root.classAliases?.aliases.map((alias) => alias.name) ?? []);
+  for (const child of root.children) {
+    validateNodeClassAliases(child, defined, diagnostics);
+  }
+}
+
+function validateNodeClassAliases(
+  node: Node,
+  defined: Set<string>,
+  diagnostics: Diagnostic[]
+): void {
+  if (node.type === "Element") {
+    const spans = node.classSpans ?? [];
+    node.classes.forEach((cls, index) => {
+      const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+      if (!match) {
+        return;
+      }
+      const aliasName = match[1];
+      if (defined.has(aliasName)) {
+        return;
+      }
+      const span = spans[index];
+      if (span) {
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE307",
+          message: `Undefined class alias '${aliasName}'.`,
+          span
+        });
+      } else {
+        pushDiag(diagnostics, "COLLIE307", `Undefined class alias '${aliasName}'.`, 1, 1, 0);
+      }
+    });
+    for (const child of node.children) {
+      validateNodeClassAliases(child, defined, diagnostics);
+    }
+    return;
+  }
+
+  if (node.type === "Conditional") {
+    for (const branch of node.branches) {
+      for (const child of branch.body) {
+        validateNodeClassAliases(child, defined, diagnostics);
+      }
+    }
+  }
+}
+
 function parseElement(
   line: string,
   lineNumber: number,
@@ -722,7 +1023,7 @@ function parseElement(
   diagnostics: Diagnostic[]
 ): ElementNode | null {
   // Split selector-style syntax first (div.welcome.big)
-  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_-]+)*/);
+  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_$-]+)*/);
   if (!selectorMatch) {
     pushDiag(
       diagnostics,
@@ -737,9 +1038,25 @@ function parseElement(
   }
 
   const raw = selectorMatch[0];
-  const parts = raw.split(".");
-  const name = parts[0];
-  const classes = parts.slice(1);
+  const name = selectorMatch[1] ?? raw;
+  const classes: string[] = [];
+  const classSpans: SourceSpan[] = [];
+
+  let selectorCursor = name.length;
+  while (selectorCursor < raw.length) {
+    if (raw[selectorCursor] !== ".") {
+      break;
+    }
+    const tokenStart = selectorCursor + 1;
+    let tokenEnd = tokenStart;
+    while (tokenEnd < raw.length && /[A-Za-z0-9_$-]/.test(raw[tokenEnd])) {
+      tokenEnd++;
+    }
+    const token = raw.slice(tokenStart, tokenEnd);
+    classes.push(token);
+    classSpans.push(createSpan(lineNumber, column + tokenStart, token.length, lineOffset));
+    selectorCursor = tokenEnd;
+  }
 
   let rest = line.slice(raw.length);
   let inlineText: TextNode | null = null;
@@ -755,15 +1072,27 @@ function parseElement(
 
     if (rest.length === 0) break;
 
-    // inline text
-    if (rest.startsWith("|")) {
-      inlineText = parseTextLine(
+    // inline text (pipe-style or bare)
+    if (!rest.startsWith(".")) {
+      const textNode = parseTextLine(
         rest,
         lineNumber,
         column + consumed,
         lineOffset,
         diagnostics
       );
+      if (!textNode) {
+        pushDiag(
+          diagnostics,
+          "COLLIE004",
+          "Element lines may only contain .class shorthands or inline text after the tag name.",
+          lineNumber,
+          column + consumed,
+          lineOffset
+        );
+        return null;
+      }
+      inlineText = textNode;
       break;
     }
 
@@ -772,12 +1101,12 @@ function parseElement(
       rest = rest.slice(1);
       consumed++;
 
-      const classMatch = rest.match(/^[A-Za-z0-9_-]+/);
+      const classMatch = rest.match(CLASS_NAME);
       if (!classMatch) {
         pushDiag(
           diagnostics,
           "COLLIE004",
-          "Class names must contain only letters, numbers, underscores, or hyphens.",
+          "Class names must contain only letters, numbers, underscores, hyphens, or `$` (for aliases).",
           lineNumber,
           column + consumed,
           lineOffset
@@ -785,7 +1114,10 @@ function parseElement(
         return null;
       }
 
-      classes.push(classMatch[0]);
+      const token = classMatch[0];
+      const tokenColumn = column + consumed;
+      classes.push(token);
+      classSpans.push(createSpan(lineNumber, tokenColumn, token.length, lineOffset));
       rest = rest.slice(classMatch[0].length);
       consumed += classMatch[0].length;
       continue;
@@ -803,12 +1135,16 @@ function parseElement(
     return null;
   }
 
-  return {
+  const element: ElementNode = {
     type: "Element",
     name,
     classes,
     children: inlineText ? [inlineText] : []
   };
+  if (classSpans.length) {
+    element.classSpans = classSpans;
+  }
+  return element;
 }
 
 function pushDiag(
