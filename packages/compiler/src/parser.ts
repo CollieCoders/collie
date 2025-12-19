@@ -1,4 +1,5 @@
 import type {
+  ClassAliasDecl,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
@@ -51,6 +52,7 @@ export function parse(source: string): ParseResult {
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
+  let classesBlockLevel: number | null = null;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -104,6 +106,9 @@ export function parse(source: string): ParseResult {
     if (propsBlockLevel !== null && level <= propsBlockLevel) {
       propsBlockLevel = null;
     }
+    if (classesBlockLevel !== null && level <= classesBlockLevel) {
+      classesBlockLevel = null;
+    }
 
     const top = stack[stack.length - 1];
     if (level > top.level + 1) {
@@ -127,6 +132,36 @@ export function parse(source: string): ParseResult {
     const isElseLine = /^@else\b/.test(trimmed) && !isElseIfLine;
     if (!isElseIfLine && !isElseLine) {
       conditionalChains.delete(level);
+    }
+
+    if (trimmed === "classes") {
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE301",
+          "Classes block must be at the top level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (root.children.length > 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE302",
+          "Classes block must appear before any template nodes.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else {
+        if (!root.classAliases) {
+          root.classAliases = { aliases: [] };
+        }
+        classesBlockLevel = level;
+      }
+      continue;
     }
 
     if (trimmed === "props") {
@@ -173,6 +208,26 @@ export function parse(source: string): ParseResult {
       const field = parsePropsField(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
       if (field && root.props) {
         root.props.fields.push(field);
+      }
+      continue;
+    }
+
+    if (classesBlockLevel !== null && level > classesBlockLevel) {
+      if (level !== classesBlockLevel + 1) {
+        pushDiag(
+          diagnostics,
+          "COLLIE303",
+          "Classes lines must be indented two spaces under the classes header.",
+          lineNumber,
+          indent + 1,
+          lineOffset
+        );
+        continue;
+      }
+
+      const alias = parseClassAliasLine(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (alias && root.classAliases) {
+        root.classAliases.aliases.push(alias);
       }
       continue;
     }
@@ -712,6 +767,96 @@ function parsePropsField(
     optional: optionalFlag === "?",
     typeText
   };
+}
+
+function parseClassAliasLine(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ClassAliasDecl | null {
+  const match = line.match(/^([^=]+?)\s*=\s*(.+)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE304",
+      "Classes lines must be in the form `name = class.tokens`.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(line.length, 1)
+    );
+    return null;
+  }
+
+  const rawName = match[1].trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(rawName)) {
+    pushDiag(
+      diagnostics,
+      "COLLIE305",
+      `Class alias name '${rawName}' must be a valid identifier.`,
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(rawName.length, 1)
+    );
+    return null;
+  }
+
+  const rhs = match[2];
+  const rhsIndex = line.indexOf(rhs);
+  const rhsColumn = rhsIndex >= 0 ? column + rhsIndex : column;
+  const classes = parseAliasClasses(rhs, lineNumber, rhsColumn, lineOffset, diagnostics);
+  if (!classes.length) {
+    return null;
+  }
+
+  return { name: rawName, classes };
+}
+
+function parseAliasClasses(
+  rhs: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): string[] {
+  const trimmed = rhs.trim();
+  if (!trimmed) {
+    pushDiag(
+      diagnostics,
+      "COLLIE304",
+      "Classes lines must provide one or more class tokens after '='.",
+      lineNumber,
+      column,
+      lineOffset,
+      Math.max(rhs.length, 1)
+    );
+    return [];
+  }
+
+  const withoutDotPrefix = trimmed.startsWith(".") ? trimmed.slice(1) : trimmed;
+  const parts = withoutDotPrefix.split(".");
+  const classes: string[] = [];
+  for (const part of parts) {
+    const token = part.trim();
+    if (!token) {
+      pushDiag(
+        diagnostics,
+        "COLLIE304",
+        "Classes lines must provide one or more class tokens after '='.",
+        lineNumber,
+        column,
+        lineOffset,
+        Math.max(rhs.length, 1)
+      );
+      return [];
+    }
+    classes.push(token);
+  }
+
+  return classes;
 }
 
 function parseElement(
