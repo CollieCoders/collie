@@ -1,10 +1,14 @@
 import type {
+  Attribute,
   ClassAliasDecl,
   ClassAliasesDecl,
+  ComponentNode,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
   ExpressionNode,
+  ForNode,
+  JSXPassthroughNode,
   Node,
   PropsField,
   RootNode,
@@ -24,7 +28,7 @@ interface ConditionalBranchContext {
   children: Node[];
 }
 
-type ParentNode = RootNode | ElementNode | ConditionalBranchContext;
+type ParentNode = RootNode | ElementNode | ComponentNode | ForNode | ConditionalBranchContext;
 
 interface StackItem {
   node: ParentNode;
@@ -48,6 +52,11 @@ interface ConditionalChainState {
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
 const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
 
+function getIndentLevel(line: string): number {
+  const match = line.match(/^\s*/);
+  return match ? match[0].length / 2 : 0;
+}
+
 export function parse(source: string): ParseResult {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
@@ -62,12 +71,14 @@ export function parse(source: string): ParseResult {
   const lines = normalized.split("\n");
 
   let offset = 0;
+  let i = 0;
 
-  for (let i = 0; i < lines.length; i++) {
+  while (i < lines.length) {
     const rawLine = lines[i];
     const lineNumber = i + 1;
     const lineOffset = offset;
     offset += rawLine.length + 1;
+    i++;
 
     if (/^\s*$/.test(rawLine)) {
       continue;
@@ -238,6 +249,31 @@ export function parse(source: string): ParseResult {
 
     const parent = stack[stack.length - 1].node;
 
+    if (trimmed.startsWith("@for")) {
+      const forHeader = parseForHeader(
+        lineContent,
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        diagnostics
+      );
+      if (!forHeader) {
+        continue;
+      }
+      const forNode: ForNode = {
+        type: "For",
+        itemName: forHeader.itemName,
+        arrayExpr: forHeader.arrayExpr,
+        body: []
+      };
+      addChildToParent(parent, forNode);
+      if (parent === root) {
+        sawTopLevelTemplateNode = true;
+      }
+      stack.push({ node: forNode, level });
+      continue;
+    }
+
     if (trimmed.startsWith("@if")) {
       const header = parseConditionalHeader(
         "if",
@@ -253,7 +289,7 @@ export function parse(source: string): ParseResult {
       const chain: ConditionalNode = { type: "Conditional", branches: [] };
       const branch: ConditionalBranch = { test: header.test, body: [] };
       chain.branches.push(branch);
-      parent.children.push(chain);
+      addChildToParent(parent, chain);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
       }
@@ -402,10 +438,62 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    if (lineContent.startsWith("=")) {
+      // Check if this starts a multiline JSX block
+      const payload = lineContent.slice(1).trim();
+      
+      // If it's a function or expression that starts with ( or <, collect multiline content
+      if (payload.endsWith("(") || payload.endsWith("<") || (i < lines.length && level < getIndentLevel(lines[i]))) {
+        // Collect all indented children
+        let jsxContent = payload;
+        const jsxStartLine = i;
+        while (i < lines.length) {
+          const nextRaw = lines[i];
+          const nextIndent = getIndentLevel(nextRaw);
+          const nextTrimmed = nextRaw.trim();
+          
+          // Include lines that are:
+          // 1. More indented than the = line (children)
+          // 2. At the same level but are just closing parens/braces
+          if (nextIndent > level && nextTrimmed.length > 0) {
+            jsxContent += "\n" + nextRaw;
+            i++;
+          } else if (nextIndent === level && /^[)\]}]+$/.test(nextTrimmed)) {
+            // Include closing parens/braces at the same level
+            jsxContent += "\n" + nextRaw;
+            i++;
+            // After the closing paren, we're done
+            break;
+          } else {
+            break;
+          }
+        }
+        
+        const jsxNode: JSXPassthroughNode = {
+          type: "JSXPassthrough",
+          expression: jsxContent
+        };
+        addChildToParent(parent, jsxNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
+        continue;
+      }
+      
+      const jsxNode = parseJSXPassthrough(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (jsxNode) {
+        addChildToParent(parent, jsxNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
+      }
+      continue;
+    }
+
     if (lineContent.startsWith("|")) {
       const textNode = parseTextLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (textNode) {
-        parent.children.push(textNode);
+        addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
         }
@@ -416,7 +504,7 @@ export function parse(source: string): ParseResult {
     if (lineContent.startsWith("{{")) {
       const exprNode = parseExpressionLine(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
       if (exprNode) {
-        parent.children.push(exprNode);
+        addChildToParent(parent, exprNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
         }
@@ -424,12 +512,37 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
-    const element = parseElement(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+    // Check if this line starts an element/component with potential multiline attributes
+    let fullLine = trimmed;
+    let multilineEnd = i;
+    
+    if (trimmed.includes("(") && !trimmed.includes(")")) {
+      // Multiline attributes - collect subsequent lines
+      let parenDepth = (trimmed.match(/\(/g) || []).length - (trimmed.match(/\)/g) || []).length;
+      while (multilineEnd < lines.length && parenDepth > 0) {
+        const nextRaw = lines[multilineEnd];
+        multilineEnd++;
+        fullLine += "\n" + nextRaw;
+        parenDepth += (nextRaw.match(/\(/g) || []).length - (nextRaw.match(/\)/g) || []).length;
+      }
+      // Update i to skip the lines we consumed
+      i = multilineEnd;
+    }
+
+    const element = parseElement(fullLine, lineNumber, indent + 1, lineOffset, diagnostics);
     if (!element) {
+      // Try parsing as text if element parsing failed
+      const textNode = parseTextPayload(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (textNode && textNode.parts.length > 0) {
+        addChildToParent(parent, textNode);
+        if (parent === root) {
+          sawTopLevelTemplateNode = true;
+        }
+      }
       continue;
     }
 
-    parent.children.push(element);
+    addChildToParent(parent, element);
     if (parent === root) {
       sawTopLevelTemplateNode = true;
     }
@@ -463,6 +576,14 @@ function cleanupConditionalChains(state: Map<number, ConditionalChainState>, lev
     if (key > level) {
       state.delete(key);
     }
+  }
+}
+
+function addChildToParent(parent: ParentNode, child: Node): void {
+  if (parent.type === "For") {
+    parent.body.push(child);
+  } else {
+    parent.children.push(child);
   }
 }
 
@@ -555,6 +676,49 @@ function parseElseHeader(
     inlineColumn,
     directiveLength: trimmed.length || 4
   };
+}
+
+interface ForHeaderResult {
+  itemName: string;
+  arrayExpr: string;
+}
+
+function parseForHeader(
+  lineContent: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ForHeaderResult | null {
+  const trimmed = lineContent.trimEnd();
+  const match = trimmed.match(/^@for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$/);
+  if (!match) {
+    pushDiag(
+      diagnostics,
+      "COLLIE210",
+      "Invalid @for syntax. Use @for itemName in arrayExpr.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  const itemName = match[1];
+  const arrayExpr = match[2].trim();
+  if (!arrayExpr) {
+    pushDiag(
+      diagnostics,
+      "COLLIE210",
+      "@for array expression cannot be empty.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  return { itemName, arrayExpr };
 }
 
 function parseInlineNode(
@@ -803,6 +967,33 @@ function parseExpressionLine(
   return { type: "Expression", value: inner };
 }
 
+function parseJSXPassthrough(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): JSXPassthroughNode | null {
+  if (!line.startsWith("=")) {
+    return null;
+  }
+  
+  const payload = line.slice(1).trim();
+  if (!payload) {
+    pushDiag(
+      diagnostics,
+      "COLLIE005",
+      "JSX passthrough expression cannot be empty.",
+      lineNumber,
+      column,
+      lineOffset
+    );
+    return null;
+  }
+  
+  return { type: "JSXPassthrough", expression: payload };
+}
+
 
 function parsePropsField(
   line: string,
@@ -977,9 +1168,10 @@ function validateNodeClassAliases(
   defined: Set<string>,
   diagnostics: Diagnostic[]
 ): void {
-  if (node.type === "Element") {
-    const spans = node.classSpans ?? [];
-    node.classes.forEach((cls, index) => {
+  if (node.type === "Element" || node.type === "Component") {
+    const spans = node.type === "Element" ? (node.classSpans ?? []) : [];
+    const classes = node.type === "Element" ? node.classes : [];
+    classes.forEach((cls, index) => {
       const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
       if (!match) {
         return;
@@ -1013,6 +1205,12 @@ function validateNodeClassAliases(
       }
     }
   }
+
+  if (node.type === "For") {
+    for (const child of node.body) {
+      validateNodeClassAliases(child, defined, diagnostics);
+    }
+  }
 }
 
 function parseElement(
@@ -1021,130 +1219,236 @@ function parseElement(
   column: number,
   lineOffset: number,
   diagnostics: Diagnostic[]
-): ElementNode | null {
-  // Split selector-style syntax first (div.welcome.big)
-  const selectorMatch = line.match(/^([A-Za-z][A-Za-z0-9_$]*)(\.[A-Za-z0-9_$-]+)*/);
-  if (!selectorMatch) {
-    pushDiag(
-      diagnostics,
-      "COLLIE004",
-      "Element lines must start with a valid tag or component name.",
-      lineNumber,
-      column,
-      lineOffset,
-      Math.max(line.length, 1)
-    );
+): ElementNode | ComponentNode | null {
+  // First, try to match tag name
+  const nameMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)/);
+  if (!nameMatch) {
+    // Don't push diagnostic here - let the caller handle fallback to text
     return null;
   }
 
-  const raw = selectorMatch[0];
-  const name = selectorMatch[1] ?? raw;
+  const name = nameMatch[1];
+  let cursor = name.length;
+
+  // Check what follows the name
+  const nextPart = line.slice(cursor);
+  const isComponent = /^[A-Z]/.test(name);
+  
+  // Components must have parentheses or be at EOL
+  if (isComponent && nextPart.length > 0) {
+    const trimmedNext = nextPart.trimStart();
+    if (trimmedNext.length > 0 && !trimmedNext.startsWith("(")) {
+      // This looks like a component name but has no parentheses - probably text
+      return null;
+    }
+  }
+  
+  // If it's something other than '.', '(', whitespace, or EOL, it's probably not an element
+  if (cursor < line.length) {
+    const nextChar = line[cursor];
+    if (nextChar !== "." && nextChar !== "(" && !/\s/.test(nextChar)) {
+      // This is probably text, not an element
+      return null;
+    }
+  }
+
+  // Parse classes (only for elements, not components)
   const classes: string[] = [];
   const classSpans: SourceSpan[] = [];
 
-  let selectorCursor = name.length;
-  while (selectorCursor < raw.length) {
-    if (raw[selectorCursor] !== ".") {
-      break;
-    }
-    const tokenStart = selectorCursor + 1;
-    let tokenEnd = tokenStart;
-    while (tokenEnd < raw.length && /[A-Za-z0-9_$-]/.test(raw[tokenEnd])) {
-      tokenEnd++;
-    }
-    const token = raw.slice(tokenStart, tokenEnd);
-    classes.push(token);
-    classSpans.push(createSpan(lineNumber, column + tokenStart, token.length, lineOffset));
-    selectorCursor = tokenEnd;
-  }
-
-  let rest = line.slice(raw.length);
-  let inlineText: TextNode | null = null;
-  let consumed = raw.length;
-
-  while (rest.length > 0) {
-    // consume whitespace
-    const ws = rest.match(/^\s+/);
-    if (ws) {
-      rest = rest.slice(ws[0].length);
-      consumed += ws[0].length;
-    }
-
-    if (rest.length === 0) break;
-
-    // inline text (pipe-style or bare)
-    if (!rest.startsWith(".")) {
-      const textNode = parseTextLine(
-        rest,
-        lineNumber,
-        column + consumed,
-        lineOffset,
-        diagnostics
-      );
-      if (!textNode) {
-        pushDiag(
-          diagnostics,
-          "COLLIE004",
-          "Element lines may only contain .class shorthands or inline text after the tag name.",
-          lineNumber,
-          column + consumed,
-          lineOffset
-        );
-        return null;
-      }
-      inlineText = textNode;
-      break;
-    }
-
-    // spaced class shorthand: div .foo
-    if (rest.startsWith(".")) {
-      rest = rest.slice(1);
-      consumed++;
-
-      const classMatch = rest.match(CLASS_NAME);
+  if (!isComponent) {
+    while (cursor < line.length && line[cursor] === ".") {
+      cursor++; // skip the dot
+      const classMatch = line.slice(cursor).match(/^([A-Za-z0-9_$-]+)/);
       if (!classMatch) {
         pushDiag(
           diagnostics,
           "COLLIE004",
           "Class names must contain only letters, numbers, underscores, hyphens, or `$` (for aliases).",
           lineNumber,
-          column + consumed,
+          column + cursor,
           lineOffset
         );
         return null;
       }
-
-      const token = classMatch[0];
-      const tokenColumn = column + consumed;
-      classes.push(token);
-      classSpans.push(createSpan(lineNumber, tokenColumn, token.length, lineOffset));
-      rest = rest.slice(classMatch[0].length);
-      consumed += classMatch[0].length;
-      continue;
+      const className = classMatch[1];
+      classes.push(className);
+      classSpans.push(createSpan(lineNumber, column + cursor, className.length, lineOffset));
+      cursor += className.length;
     }
+  }
 
-    // anything else is invalid
+  // Parse attributes if parentheses are present
+  const attributes: Attribute[] = [];
+  if (cursor < line.length && line[cursor] === "(") {
+    const attrResult = parseAttributes(line, cursor, lineNumber, column, lineOffset, diagnostics);
+    if (!attrResult) {
+      return null;
+    }
+    attributes.push(...attrResult.attributes);
+    cursor = attrResult.endIndex;
+  }
+
+  // Parse inline text or children
+  let rest = line.slice(cursor).trimStart();
+  const children: Node[] = [];
+
+  if (rest.length > 0) {
+    // Bare text after the element
+    const textNode = parseTextPayload(rest, lineNumber, column + cursor + (line.slice(cursor).length - rest.length), lineOffset, diagnostics);
+    if (textNode) {
+      children.push(textNode);
+    }
+  }
+
+  if (isComponent) {
+    return {
+      type: "Component",
+      name,
+      attributes,
+      children
+    };
+  } else {
+    const element: ElementNode = {
+      type: "Element",
+      name,
+      classes,
+      attributes,
+      children
+    };
+    if (classSpans.length) {
+      element.classSpans = classSpans;
+    }
+    return element;
+  }
+}
+
+interface ParseAttributesResult {
+  attributes: Attribute[];
+  endIndex: number;
+}
+
+function parseAttributes(
+  line: string,
+  startIndex: number,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ParseAttributesResult | null {
+  if (line[startIndex] !== "(") {
+    return null;
+  }
+
+  const attributes: Attribute[] = [];
+  let cursor = startIndex + 1;
+  let depth = 1;
+  let attrBuffer = "";
+
+  // Find the matching closing parenthesis
+  while (cursor < line.length && depth > 0) {
+    const ch = line[cursor];
+    if (ch === "(") {
+      depth++;
+      attrBuffer += ch;
+    } else if (ch === ")") {
+      depth--;
+      if (depth > 0) {
+        attrBuffer += ch;
+      }
+    } else {
+      attrBuffer += ch;
+    }
+    cursor++;
+  }
+
+  if (depth !== 0) {
     pushDiag(
       diagnostics,
       "COLLIE004",
-      "Element lines may only contain .class shorthands or inline text after the tag name.",
+      "Unclosed attribute parentheses.",
       lineNumber,
-      column + consumed,
+      column + startIndex,
       lineOffset
     );
     return null;
   }
 
-  const element: ElementNode = {
-    type: "Element",
-    name,
-    classes,
-    children: inlineText ? [inlineText] : []
-  };
-  if (classSpans.length) {
-    element.classSpans = classSpans;
+  // Now parse the attributes from the buffer
+  const trimmedAttrs = attrBuffer.trim();
+  if (trimmedAttrs.length === 0) {
+    return { attributes: [], endIndex: cursor };
   }
-  return element;
+
+  // Parse each attribute
+  // We need to handle multiline attributes properly
+  const attrLines = trimmedAttrs.split("\n");
+  let currentAttr = "";
+  
+  for (const attrLine of attrLines) {
+    const trimmedLine = attrLine.trim();
+    if (trimmedLine.length === 0) continue;
+
+    // Check if this starts a new attribute (has an = sign at the top level)
+    // or continues a previous one
+    const eqIndex = trimmedLine.indexOf("=");
+    if (eqIndex > 0 && /^[A-Za-z][A-Za-z0-9_-]*\s*=/.test(trimmedLine)) {
+      // This is a new attribute
+      if (currentAttr) {
+        // Parse the previous attribute
+        parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        currentAttr = "";
+      }
+      currentAttr = trimmedLine;
+    } else {
+      // Continuation of previous attribute
+      if (currentAttr) {
+        currentAttr += " " + trimmedLine;
+      } else {
+        // Boolean attribute
+        currentAttr = trimmedLine;
+      }
+    }
+  }
+
+  // Parse the last attribute
+  if (currentAttr) {
+    parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+  }
+
+  return { attributes, endIndex: cursor };
+}
+
+function parseAndAddAttribute(
+  attrStr: string,
+  attributes: Attribute[],
+  diagnostics: Diagnostic[],
+  lineNumber: number,
+  column: number,
+  lineOffset: number
+): void {
+  const trimmed = attrStr.trim();
+  const match = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.+)$/s);
+  if (match) {
+    const attrName = match[1];
+    const attrValue = match[2].trim();
+    attributes.push({ name: attrName, value: attrValue });
+  } else {
+    // Boolean attribute
+    const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)$/);
+    if (nameMatch) {
+      attributes.push({ name: nameMatch[1], value: null });
+    } else {
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Invalid attribute syntax: ${trimmed.slice(0, 30)}`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+    }
+  }
 }
 
 function pushDiag(

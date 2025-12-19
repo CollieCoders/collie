@@ -1,8 +1,12 @@
 import type {
+  Attribute,
   ClassAliasesDecl,
+  ComponentNode,
   ConditionalBranch,
   ConditionalNode,
   ElementNode,
+  ForNode,
+  JSXPassthroughNode,
   Node,
   PropsDecl,
   RootNode,
@@ -72,14 +76,17 @@ function templateUsesJsx(root: RootNode): boolean {
 }
 
 function nodeUsesJsx(node: Node): boolean {
-  if (node.type === "Element" || node.type === "Text") {
+  if (node.type === "Element" || node.type === "Text" || node.type === "Component") {
     return true;
   }
-  if (node.type === "Expression") {
+  if (node.type === "Expression" || node.type === "JSXPassthrough") {
     return false;
   }
   if (node.type === "Conditional") {
     return node.branches.some((branch) => branchUsesJsx(branch));
+  }
+  if (node.type === "For") {
+    return node.body.some((child) => nodeUsesJsx(child));
   }
   return false;
 }
@@ -98,8 +105,17 @@ function emitNodeInJsx(node: Node, aliasEnv: Map<string, readonly string[]>): st
   if (node.type === "Expression") {
     return `{${node.value}}`;
   }
+  if (node.type === "JSXPassthrough") {
+    return `{${node.expression}}`;
+  }
   if (node.type === "Conditional") {
     return `{${emitConditionalExpression(node, aliasEnv)}}`;
+  }
+  if (node.type === "For") {
+    return `{${emitForExpression(node, aliasEnv)}}`;
+  }
+  if (node.type === "Component") {
+    return emitComponent(node, aliasEnv);
   }
   return emitElement(node, aliasEnv);
 }
@@ -110,8 +126,85 @@ function emitElement(
 ): string {
   const expanded = expandClasses(node.classes, aliasEnv);
   const classAttr = expanded.length ? ` className="${expanded.join(" ")}"` : "";
-  const children = node.children.map((child) => emitNodeInJsx(child, aliasEnv)).join("");
-  return `<${node.name}${classAttr}>${children}</${node.name}>`;
+  const attrs = emitAttributes(node.attributes, aliasEnv);
+  const allAttrs = classAttr + attrs;
+  const children = emitChildrenWithSpacing(node.children, aliasEnv);
+  
+  if (children.length > 0) {
+    return `<${node.name}${allAttrs}>${children}</${node.name}>`;
+  } else {
+    return `<${node.name}${allAttrs} />`;
+  }
+}
+
+function emitComponent(
+  node: ComponentNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  const attrs = emitAttributes(node.attributes, aliasEnv);
+  const children = emitChildrenWithSpacing(node.children, aliasEnv);
+  
+  if (children.length > 0) {
+    return `<${node.name}${attrs}>${children}</${node.name}>`;
+  } else {
+    return `<${node.name}${attrs} />`;
+  }
+}
+
+function emitChildrenWithSpacing(
+  children: Node[],
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  if (children.length === 0) {
+    return "";
+  }
+  
+  const parts: string[] = [];
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const emitted = emitNodeInJsx(child, aliasEnv);
+    parts.push(emitted);
+    
+    // Add space between text and following element/component
+    // but NOT between element/component and element/component
+    if (i < children.length - 1) {
+      const nextChild = children[i + 1];
+      const needsSpace = 
+        child.type === "Text" &&
+        (nextChild.type === "Element" || nextChild.type === "Component" || nextChild.type === "Expression" || nextChild.type === "JSXPassthrough");
+      
+      if (needsSpace) {
+        parts.push(" ");
+      }
+    }
+  }
+  
+  return parts.join("");
+}
+
+function emitAttributes(
+  attributes: Attribute[],
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  if (attributes.length === 0) {
+    return "";
+  }
+  
+  return attributes.map(attr => {
+    if (attr.value === null) {
+      return ` ${attr.name}`;
+    }
+    // The value is already in the correct format (e.g., {expr} or "string")
+    return ` ${attr.name}=${attr.value}`;
+  }).join("");
+}
+
+function emitForExpression(
+  node: ForNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  const body = emitNodesExpression(node.body, aliasEnv);
+  return `${node.arrayExpr}.map((${node.itemName}) => ${body})`;
 }
 
 function expandClasses(
@@ -205,8 +298,14 @@ function emitSingleNodeExpression(
   if (node.type === "Expression") {
     return node.value;
   }
+  if (node.type === "JSXPassthrough") {
+    return node.expression;
+  }
   if (node.type === "Conditional") {
     return emitConditionalExpression(node, aliasEnv);
+  }
+  if (node.type === "For") {
+    return emitForExpression(node, aliasEnv);
   }
   if (node.type === "Text") {
     return `<>${emitNodeInJsx(node, aliasEnv)}</>`;

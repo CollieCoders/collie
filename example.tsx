@@ -5,18 +5,10 @@
       <span className="dashboard-subtitle">A TSX feature showcase</span>
     </div>
     <div className="header-right">
-      <button
-        type="button"
-        className="btn btn-ghost"
-        onClick={toggleTheme}
-      >
+      <button type="button" className="btn btn-ghost" onClick={toggleTheme}>
         Toggle theme ({theme})
       </button>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={onLogout}
-      >
+      <button type="button" className="btn btn-primary" onClick={onLogout}>
         Logout
       </button>
     </div>
@@ -58,10 +50,7 @@
         </div>
       </div>
 
-      <SuspenseLike
-        status={status}
-        fallback={<div>Loading users…</div>}
-      >
+      <SuspenseLike status={status} fallback={<div>Loading users…</div>}>
         {() => (
           <DataTable<User>
             items={filteredUsers}
@@ -90,9 +79,7 @@
               {
                 key: "role",
                 header: "Role",
-                render: (value) => (
-                  <span className="user-role">{value}</span>
-                ),
+                render: (value) => <span className="user-role">{value}</span>,
               },
               {
                 key: "isActive",
@@ -110,10 +97,9 @@
                 header: "Created",
                 render: (value) => (
                   <span>
-                    {new Date(value as string).toLocaleDateString(
-                      undefined,
-                      { dateStyle: "medium" }
-                    )}
+                    {new Date(value as string).toLocaleDateString(undefined, {
+                      dateStyle: "medium",
+                    })}
                   </span>
                 ),
               },
@@ -130,9 +116,7 @@
               <div className="selected-user-header">
                 <Avatar user={selectedUser} size={40} />
                 <div>
-                  <div className="selected-user-name">
-                    {selectedUser.name}
-                  </div>
+                  <div className="selected-user-name">{selectedUser.name}</div>
                   <div className="selected-user-email">
                     {selectedUser.email}
                   </div>
@@ -144,18 +128,17 @@
                 </div>
                 <div>
                   Created:{" "}
-                  {new Date(
-                    selectedUser.createdAt
-                  ).toLocaleDateString(undefined, {
-                    dateStyle: "medium",
-                  })}
+                  {new Date(selectedUser.createdAt).toLocaleDateString(
+                    undefined,
+                    {
+                      dateStyle: "medium",
+                    }
+                  )}
                 </div>
                 <div>
                   Last login:{" "}
                   {selectedUser.lastLoginAt
-                    ? new Date(
-                        selectedUser.lastLoginAt
-                      ).toLocaleString()
+                    ? new Date(selectedUser.lastLoginAt).toLocaleString()
                     : "Never"}
                 </div>
                 <div>
@@ -167,10 +150,7 @@
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary"
-              >
+              <button type="button" className="btn btn-secondary">
                 View full profile
               </button>
             </div>
@@ -190,4 +170,4 @@
       </aside>
     </section>
   </main>
-</div>
+</div>;

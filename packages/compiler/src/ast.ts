@@ -17,14 +17,39 @@ export interface RootNode {
   classAliases?: ClassAliasesDecl;
 }
 
-export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode;
+export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode | ForNode | ComponentNode | JSXPassthroughNode;
+
+export interface Attribute {
+  name: string;
+  value: string | null;
+}
 
 export interface ElementNode {
   type: "Element";
   name: string;
   classes: string[];
   classSpans?: SourceSpan[];
+  attributes: Attribute[];
   children: Node[];
+}
+
+export interface ComponentNode {
+  type: "Component";
+  name: string;
+  attributes: Attribute[];
+  children: Node[];
+}
+
+export interface ForNode {
+  type: "For";
+  itemName: string;
+  arrayExpr: string;
+  body: Node[];
+}
+
+export interface JSXPassthroughNode {
+  type: "JSXPassthrough";
+  expression: string;
 }
 
 export interface TextNode {
