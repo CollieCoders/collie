@@ -580,11 +580,15 @@ function cleanupConditionalChains(state: Map<number, ConditionalChainState>, lev
 }
 
 function addChildToParent(parent: ParentNode, child: Node): void {
-  if (parent.type === "For") {
+  if (isForParent(parent)) {
     parent.body.push(child);
   } else {
     parent.children.push(child);
   }
+}
+
+function isForParent(parent: ParentNode): parent is ForNode {
+  return "type" in parent && parent.type === "For";
 }
 
 interface ConditionalHeaderResult {
@@ -705,7 +709,20 @@ function parseForHeader(
     return null;
   }
   const itemName = match[1];
-  const arrayExpr = match[2].trim();
+  const arrayExprRaw = match[2];
+  if (!itemName || !arrayExprRaw) {
+    pushDiag(
+      diagnostics,
+      "COLLIE210",
+      "Invalid @for syntax. Use @for itemName in arrayExpr.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  const arrayExpr = arrayExprRaw.trim();
   if (!arrayExpr) {
     pushDiag(
       diagnostics,

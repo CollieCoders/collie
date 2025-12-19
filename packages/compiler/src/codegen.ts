@@ -23,6 +23,7 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
 
   const aliasEnv = buildClassAliasEnvironment(root.classAliases);
   const jsx = renderRootChildren(root.children, aliasEnv);
+  const propsDestructure = emitPropsDestructure(root.props);
 
   const parts: string[] = [];
 
@@ -38,9 +39,12 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   parts.push(`/** @param {Props} props */`);
 
   // IMPORTANT: Do not emit TypeScript annotations here.
-  parts.push(
-    [`export default function ${componentName}(props) {`, `  return ${jsx};`, `}`].join("\n")
-  );
+  const functionLines = [`export default function ${componentName}(props) {`];
+  if (propsDestructure) {
+    functionLines.push(`  ${propsDestructure}`);
+  }
+  functionLines.push(`  return ${jsx};`, `}`);
+  parts.push(functionLines.join("\n"));
 
   return parts.join("\n\n");
 }
@@ -328,6 +332,14 @@ function emitPropsType(props?: PropsDecl): string {
     .join("; ");
 
   return `/** @typedef {{ ${fields} }} Props */`;
+}
+
+function emitPropsDestructure(props?: PropsDecl): string | null {
+  if (!props || props.fields.length === 0) {
+    return null;
+  }
+  const names = props.fields.map((field) => field.name);
+  return `const { ${names.join(", ")} } = props;`;
 }
 
 function escapeText(value: string): string {
