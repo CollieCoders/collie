@@ -12,7 +12,7 @@ import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
 import { check as runCheck } from "./checker";
-import { create as createProject } from "./creator";
+import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
@@ -119,6 +119,14 @@ async function main() {
       } else {
         flagArgs.push(arg);
       }
+    }
+
+    const templateListRequested = hasFlag(flagArgs, "--list-templates");
+    if (templateListRequested) {
+      console.log(pc.bold("Available templates:\n"));
+      console.log(formatTemplateList());
+      console.log("\nRun collie create <project-name> --template <template> to scaffold with a specific option.\n");
+      return;
     }
 
     const template = getFlag(flagArgs, "--template");
@@ -272,7 +280,7 @@ Commands:
   collie check    Validate Collie templates (collie check \"src/**/*.collie\")
   collie watch    Watch and compile templates (collie watch src --outDir dist)
   collie build    Compile templates once (collie build src --outDir dist)
-  collie create   Scaffold a new Collie project (collie create my-app)
+  collie create   Scaffold a new Collie project (use --list-templates to view options)
 `);
 }
 

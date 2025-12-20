@@ -57,6 +57,22 @@ const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript
   "nextjs-app": { template: "nextjs-app-router", forcedTypescript: true }
 };
 
+export function formatTemplateList(): string {
+  return Object.entries(TEMPLATE_MAP)
+    .map(([key, meta]) => {
+      const variantInfo = [
+        `${meta.variants.ts} (TypeScript)`,
+        `${meta.variants.js} (JavaScript)`
+      ].join(", ");
+      return [
+        `  • ${key} – ${meta.label}`,
+        `    ${meta.description}`,
+        `    Variants: ${variantInfo}`
+      ].join("\n");
+    })
+    .join("\n");
+}
+
 export async function create(options: CreateOptions = {}): Promise<void> {
   const resolved = await promptForOptions(options);
   const targetDir = path.resolve(process.cwd(), resolved.projectName);
@@ -220,12 +236,7 @@ function resolveTemplate(input: string): TemplateResolution {
 }
 
 function throwInvalidTemplateError(input: string): never {
-  const list = Object.entries(TEMPLATE_MAP)
-    .map(([key, meta]) => {
-      const variantInfo = `${meta.variants.ts} (TS), ${meta.variants.js} (JS)`;
-      return `  • ${key.padEnd(18)} ${meta.label} - ${variantInfo}`;
-    })
-    .join("\n");
+  const list = formatTemplateList();
 
   throw new Error(
     `Invalid template: '${input}'.\n\nAvailable templates:\n${list}\n\nUsage: collie create <project-name> --template <template>`
