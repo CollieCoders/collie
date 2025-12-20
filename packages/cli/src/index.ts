@@ -13,6 +13,7 @@ import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
 import { check as runCheck } from "./checker";
 import { create as createProject } from "./creator";
+import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
@@ -27,11 +28,9 @@ interface InitOptions {
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
 const CLI_PACKAGE_VERSION = readCliPackageVersion();
-const COLLIE_DEPENDENCIES =
-  CLI_PACKAGE_VERSION === "latest"
-    ? ["@collie-lang/compiler", "@collie-lang/vite"]
-    : [`@collie-lang/compiler@${CLI_PACKAGE_VERSION}`, `@collie-lang/vite@${CLI_PACKAGE_VERSION}`];
-const NEXT_COLLIE_DEPENDENCIES = ["@collie-lang/next", "@collie-lang/webpack"];
+const COLLIE_COMPILER_DEPENDENCY = formatCollieDependency("@collie-lang/compiler");
+const COLLIE_VITE_DEPENDENCY = formatCollieDependency("@collie-lang/vite");
+const COLLIE_DEPENDENCIES = [COLLIE_COMPILER_DEPENDENCY, COLLIE_VITE_DEPENDENCY];
 const PROMPT_OPTIONS = {
   onCancel: () => {
     console.log(pc.yellow("\nCancelled"));
@@ -260,7 +259,7 @@ function printHelp() {
   console.log(`${pc.bold("collie")}
 
 Commands:
-  collie init     Initialize Collie in Vite or scaffold a Next.js project (--nextjs)
+  collie init     Initialize Collie in Vite or Next.js projects (--nextjs)
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
   collie check    Validate Collie templates (collie check \"src/**/*.collie\")
   collie watch    Watch and compile templates (collie watch src --outDir dist)
@@ -270,12 +269,61 @@ Commands:
 }
 
 async function runInit(options: InitOptions = {}): Promise<void> {
-  const framework = options.framework ?? (await promptFramework());
+  const projectRoot = process.cwd();
+  const packageJson = await readProjectPackage(projectRoot);
+  const detectedFramework = packageJson ? detectFrameworkFromPackage(packageJson) : null;
+
+  let framework = options.framework ?? detectedFramework;
+  if (!framework) {
+    framework = await promptFramework();
+  }
+
   if (framework === "nextjs") {
-    await initNextProject(options);
+    if (!packageJson) {
+      throw new Error("package.json not found. Run this inside a Next.js project.");
+    }
+    if (!hasNextDependency(packageJson)) {
+      throw new Error("Not a Next.js project. 'next' not found in package.json");
+    }
+
+    console.log(pc.cyan("Detected Next.js project\n"));
+
+    if (options.noInstall) {
+      console.log(
+        pc.yellow("Skipping dependency installation (--no-install). Install @collie-lang/compiler manually.")
+      );
+    } else {
+      const packageManager = detectPackageManager(projectRoot);
+      console.log(pc.cyan(`Installing @collie-lang/compiler with ${packageManager}...`));
+      await installDevDependencies(packageManager, projectRoot, [COLLIE_COMPILER_DEPENDENCY]);
+      console.log(pc.green("✔ Installed @collie-lang/compiler"));
+    }
+
+    await setupNextJs(projectRoot, { packageJson, skipDetectionLog: true });
+    printNextJsInstructions();
     return;
   }
+
   await initViteProject();
+}
+
+async function readProjectPackage(projectRoot: string): Promise<Record<string, any> | null> {
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    return null;
+  }
+  const raw = await fs.readFile(packageJsonPath, "utf8");
+  return JSON.parse(raw);
+}
+
+function detectFrameworkFromPackage(pkg: Record<string, any>): Framework | null {
+  if (hasNextDependency(pkg)) {
+    return "nextjs";
+  }
+  if (getViteDependencyInfo(pkg)) {
+    return "vite";
+  }
+  return null;
 }
 
 async function promptFramework(): Promise<Framework> {
@@ -286,7 +334,7 @@ async function promptFramework(): Promise<Framework> {
       message: "Which framework would you like to set up?",
       choices: [
         { title: "Vite (existing project)", value: "vite" },
-        { title: "Next.js (create new project)", value: "nextjs" }
+        { title: "Next.js (existing project)", value: "nextjs" }
       ],
       initial: 0
     },
@@ -330,72 +378,9 @@ async function initViteProject(): Promise<void> {
   console.log(pc.green("✔ Collie is ready! Add a .collie file and import it in your Vite app."));
 }
 
-async function initNextProject(options: InitOptions): Promise<void> {
-  const cwd = process.cwd();
-  const projectName = options.projectName?.trim() || "my-collie-app";
-  const useTypescript = options.typescript !== false;
-  const packageManager = options.packageManager ?? detectPreferredPackageManager();
-  const targetDir = path.join(cwd, projectName);
-
-  if (existsSync(targetDir)) {
-    throw new Error(
-      `Directory "${projectName}" already exists. Choose a different project name or remove the existing directory.`
-    );
-  }
-
-  console.log(pc.cyan(`Creating Next.js project with Collie support: ${projectName}`));
-  const createArgs = [
-    "create-next-app@latest",
-    projectName,
-    useTypescript ? "--typescript" : "--javascript",
-    "--eslint",
-    "--tailwind",
-    "--app",
-    "--src-dir",
-    "--import-alias",
-    "@/*",
-    packageManager === "pnpm" ? "--use-pnpm" : packageManager === "yarn" ? "--use-yarn" : "--use-npm"
-  ];
-
-  await runCommand("npx", createArgs, cwd);
-
-  if (!options.noInstall) {
-    console.log(pc.cyan("Installing Collie packages..."));
-    await installNextCollieDependencies(packageManager, targetDir);
-  } else {
-    console.log(
-      pc.yellow(
-        "Skipping Collie dependency installation (--no-install). Install @collie-lang/next and @collie-lang/webpack manually."
-      )
-    );
-  }
-
-  console.log(pc.cyan("Configuring Next.js for Collie..."));
-  await writeNextConfigFile(targetDir, useTypescript);
-  if (useTypescript) {
-    await ensureCollieDeclaration(targetDir);
-  }
-  await createSampleNextFiles(targetDir, useTypescript);
-
-  const devCommand = formatDevCommand(packageManager);
-  console.log("");
-  console.log(pc.green("Next.js project with Collie is ready!"));
-  console.log(pc.cyan(`  cd ${projectName}`));
-  console.log(pc.cyan(`  ${devCommand}`));
-  console.log(pc.gray("\nHappy coding with Collie + Next.js! 🐕\n"));
-}
-
 function detectPackageManager(root: string): PackageManager {
   if (existsSync(path.join(root, "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(path.join(root, "yarn.lock"))) return "yarn";
-  return "npm";
-}
-
-function detectPreferredPackageManager(): PackageManager {
-  const userAgent = process.env.npm_config_user_agent ?? "";
-  if (userAgent.startsWith("pnpm")) return "pnpm";
-  if (userAgent.startsWith("yarn")) return "yarn";
-  if (userAgent.startsWith("npm")) return "npm";
   return "npm";
 }
 
@@ -407,79 +392,6 @@ async function installDevDependencies(packageManager: PackageManager, cwd: strin
   };
 
   await runCommand(packageManager, argsByManager[packageManager], cwd);
-}
-
-async function installNextCollieDependencies(packageManager: PackageManager, cwd: string): Promise<void> {
-  const deps = NEXT_COLLIE_DEPENDENCIES;
-  const argsByManager: Record<PackageManager, string[]> = {
-    pnpm: ["add", "-D", ...deps],
-    yarn: ["add", "-D", ...deps],
-    npm: ["install", "--save-dev", ...deps]
-  };
-  await runCommand(packageManager, argsByManager[packageManager], cwd);
-}
-
-async function writeNextConfigFile(projectRoot: string, useTypescript: boolean): Promise<void> {
-  const candidates = ["next.config.ts", "next.config.mjs", "next.config.js"];
-  let targetPath: string | null = null;
-  for (const candidate of candidates) {
-    const candidatePath = path.join(projectRoot, candidate);
-    if (existsSync(candidatePath)) {
-      targetPath = candidatePath;
-      break;
-    }
-  }
-  if (!targetPath) {
-    targetPath = path.join(projectRoot, useTypescript ? "next.config.ts" : "next.config.js");
-  }
-
-  const isModule = targetPath.endsWith(".ts") || targetPath.endsWith(".mjs");
-  const contents = isModule
-    ? `import { withCollie } from '@collie-lang/next';
-
-const nextConfig = withCollie({
-  // Your Next.js config here
-});
-
-export default nextConfig;
-`
-    : `const { withCollie } = require('@collie-lang/next');
-
-module.exports = withCollie({
-  // Your Next.js config here
-});
-`;
-
-  await fs.writeFile(targetPath, contents, "utf8");
-}
-
-async function createSampleNextFiles(projectRoot: string, useTypescript: boolean): Promise<void> {
-  const componentsDir = path.join(projectRoot, "src", "components");
-  await fs.mkdir(componentsDir, { recursive: true });
-  const welcomePath = path.join(componentsDir, "Welcome.collie");
-  const welcomeContent = `export default function Welcome(props)
-  div
-    h1.text-4xl.font-bold Hello from Collie!
-    p.text-gray-600.mt-2 This component was written in Collie template language.
-    p.mt-4.text-sm Framework: {props.framework || 'Next.js'}
-`;
-  await fs.writeFile(welcomePath, welcomeContent, "utf8");
-
-  const appDir = path.join(projectRoot, "src", "app");
-  await fs.mkdir(appDir, { recursive: true });
-  const pageExt = useTypescript ? "tsx" : "js";
-  const pagePath = path.join(appDir, `page.${pageExt}`);
-  const pageContent = `import Welcome from '@/components/Welcome.collie';
-
-export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <Welcome framework="Next.js" />
-    </main>
-  );
-}
-`;
-  await fs.writeFile(pagePath, pageContent, "utf8");
 }
 
 async function patchViteConfig(configPath: string): Promise<void> {
@@ -627,6 +539,10 @@ function readCliPackageVersion(): string {
   }
 }
 
+function formatCollieDependency(packageName: string): string {
+  return CLI_PACKAGE_VERSION === "latest" ? packageName : `${packageName}@${CLI_PACKAGE_VERSION}`;
+}
+
 function getViteDependencyInfo(pkg: Record<string, any>): { range: string; major: number | null } | null {
   const spec =
     (pkg.devDependencies && pkg.devDependencies.vite) ||
@@ -655,6 +571,19 @@ function printNextSteps(pkgManager: PackageManager, configPath: string): void {
   console.log(`  - Create a Collie template under src (e.g. src/Hello.collie).`);
   console.log(`  - Import it in your React app and run ${devCommand} to start Vite.`);
   console.log(`  - Need to adjust plugins later? Edit ${path.basename(configPath)}.`);
+}
+
+function printNextJsInstructions(): void {
+  console.log(pc.green("\n🎉 Collie is ready for Next.js!\n"));
+  console.log(pc.cyan("Next steps:"));
+  console.log("  - Import .collie components in your app:");
+  console.log(pc.gray("    import Welcome from './components/Welcome.collie'"));
+  console.log("");
+  console.log("  - For App Router, components work as Server Components by default");
+  console.log("  - For client components, add 'use client' to your .collie file");
+  console.log("");
+  console.log("  - Run your Next.js dev server:");
+  console.log(pc.gray("    npm run dev"));
 }
 
 function formatDevCommand(pkgManager: PackageManager): string {
