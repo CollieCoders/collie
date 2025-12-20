@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@collie-lang/compiler": "workspace:*",
+    "@collie-lang/next": "workspace:*",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",

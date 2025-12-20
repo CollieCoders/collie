@@ -27,10 +27,18 @@ interface InitOptions {
 }
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
-const CLI_PACKAGE_VERSION = readCliPackageVersion();
+const CLI_PACKAGE_INFO = readCliPackageInfo();
+const CLI_PACKAGE_VERSION = CLI_PACKAGE_INFO.version;
+const CLI_DEPENDENCY_SPECS = CLI_PACKAGE_INFO.dependencies;
+const DEFAULT_DEPENDENCY_RANGE = CLI_PACKAGE_VERSION === "latest" ? "latest" : `^${CLI_PACKAGE_VERSION}`;
 const COLLIE_COMPILER_DEPENDENCY = formatCollieDependency("@collie-lang/compiler");
 const COLLIE_VITE_DEPENDENCY = formatCollieDependency("@collie-lang/vite");
 const COLLIE_DEPENDENCIES = [COLLIE_COMPILER_DEPENDENCY, COLLIE_VITE_DEPENDENCY];
+const COLLIE_NEXT_DEPENDENCY = formatCollieDependency("@collie-lang/next");
+const COLLIE_NEXT_VERSION_RANGE = normalizeDependencyRange(
+  CLI_DEPENDENCY_SPECS["@collie-lang/next"],
+  DEFAULT_DEPENDENCY_RANGE
+);
 const PROMPT_OPTIONS = {
   onCancel: () => {
     console.log(pc.yellow("\nCancelled"));
@@ -113,7 +121,7 @@ async function main() {
       }
     }
 
-    const template = getFlag(flagArgs, "--template") as "vite" | "nextjs" | undefined;
+    const template = getFlag(flagArgs, "--template");
     const typescriptFlag = hasFlag(flagArgs, "--typescript");
     const javascriptFlag = hasFlag(flagArgs, "--javascript");
     if (typescriptFlag && javascriptFlag) {
@@ -290,16 +298,16 @@ async function runInit(options: InitOptions = {}): Promise<void> {
 
     if (options.noInstall) {
       console.log(
-        pc.yellow("Skipping dependency installation (--no-install). Install @collie-lang/compiler manually.")
+        pc.yellow("Skipping dependency installation (--no-install). Install @collie-lang/next manually.")
       );
     } else {
       const packageManager = detectPackageManager(projectRoot);
-      console.log(pc.cyan(`Installing @collie-lang/compiler with ${packageManager}...`));
-      await installDevDependencies(packageManager, projectRoot, [COLLIE_COMPILER_DEPENDENCY]);
-      console.log(pc.green("✔ Installed @collie-lang/compiler"));
+      console.log(pc.cyan(`Installing @collie-lang/next with ${packageManager}...`));
+      await installDevDependencies(packageManager, projectRoot, [COLLIE_NEXT_DEPENDENCY]);
+      console.log(pc.green("✔ Installed @collie-lang/next"));
     }
 
-    await setupNextJs(projectRoot, { packageJson, skipDetectionLog: true });
+    await setupNextJs(projectRoot, { skipDetectionLog: true, collieNextVersion: COLLIE_NEXT_VERSION_RANGE });
     printNextJsInstructions();
     return;
   }
@@ -527,20 +535,36 @@ function computeInsertPos(content: string, match: RegExpMatchArray): number {
   return pos;
 }
 
-function readCliPackageVersion(): string {
+function readCliPackageInfo(): { version: string; dependencies: Record<string, string> } {
   try {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const pkgPath = path.resolve(dir, "..", "package.json");
     const raw = readFileSync(pkgPath, "utf8");
     const pkg = JSON.parse(raw);
-    return typeof pkg.version === "string" ? pkg.version : "latest";
+    const version = typeof pkg.version === "string" ? pkg.version : "latest";
+    const dependencies =
+      pkg && typeof pkg === "object" && pkg.dependencies && typeof pkg.dependencies === "object"
+        ? pkg.dependencies
+        : {};
+    return { version, dependencies };
   } catch {
-    return "latest";
+    return { version: "latest", dependencies: {} };
   }
 }
 
 function formatCollieDependency(packageName: string): string {
   return CLI_PACKAGE_VERSION === "latest" ? packageName : `${packageName}@${CLI_PACKAGE_VERSION}`;
+}
+
+function normalizeDependencyRange(spec: string | undefined, fallback: string): string {
+  if (!spec) {
+    return fallback;
+  }
+  if (spec.startsWith("workspace:")) {
+    const trimmed = spec.replace(/^workspace:/, "");
+    return trimmed && trimmed !== "*" ? trimmed : fallback;
+  }
+  return spec;
 }
 
 function getViteDependencyInfo(pkg: Record<string, any>): { range: string; major: number | null } | null {

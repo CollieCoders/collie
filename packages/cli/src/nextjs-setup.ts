@@ -4,13 +4,12 @@ import path from "node:path";
 import pc from "picocolors";
 
 export interface NextJsSetupOptions {
-  packageJson?: Record<string, any>;
   skipDetectionLog?: boolean;
   collieNextVersion?: string;
 }
 
 export async function setupNextJs(projectRoot: string, options: NextJsSetupOptions = {}): Promise<void> {
-  const pkg = options.packageJson ?? (await readPackageJson(projectRoot));
+  const pkg = await readPackageJson(projectRoot);
   if (!pkg) {
     throw new Error("package.json not found. Run this inside your Next.js project.");
   }
@@ -56,15 +55,28 @@ async function readPackageJson(projectRoot: string): Promise<Record<string, any>
   }
 }
 
-async function writeCollieLoader(projectRoot: string): Promise<void> {
-  const loaderPath = path.join(projectRoot, "collie-loader.js");
-  await fs.writeFile(loaderPath, WEBPACK_LOADER_TEMPLATE, "utf8");
+async function ensureCollieNextDependency(
+  packageJsonPath: string,
+  pkg: Record<string, any>,
+  version: string
+): Promise<boolean> {
+  if (pkg.dependencies?.["@collie-lang/next"] || pkg.devDependencies?.["@collie-lang/next"]) {
+    return false;
+  }
+
+  pkg.dependencies = {
+    ...(pkg.dependencies ?? {}),
+    "@collie-lang/next": version
+  };
+
+  await fs.writeFile(packageJsonPath, JSON.stringify(pkg, null, 2) + "\n");
+  return true;
 }
 
 type PatchResult = "created" | "patched" | "already-configured" | "manual";
 
 async function patchNextConfig(projectRoot: string): Promise<PatchResult> {
-  const configCandidates = ["next.config.js", "next.config.mjs", "next.config.ts"];
+  const configCandidates = ["next.config.ts", "next.config.mjs", "next.config.js"];
   let configPath: string | null = null;
 
   for (const candidate of configCandidates) {
@@ -81,31 +93,145 @@ async function patchNextConfig(projectRoot: string): Promise<PatchResult> {
     return "created";
   }
 
-  let contents = await fs.readFile(configPath, "utf8");
-  if (contents.includes("collie-loader")) {
+  const contents = await fs.readFile(configPath, "utf8");
+  if (alreadyUsesCollie(contents)) {
     console.log(pc.yellow("⚠ next.config.js already configured for Collie. Skipping."));
     return "already-configured";
   }
 
-  if (contents.includes("webpack:")) {
-    console.log(pc.yellow("⚠ Detected existing webpack configuration. Add the loader manually:"));
-    console.log(pc.gray(MANUAL_CONFIG_SNIPPET.trimEnd()));
+  const format = detectModuleFormat(configPath, contents);
+  const patched =
+    format === "esm" ? patchEsmConfig(contents) : patchCommonJsConfig(contents);
+
+  if (!patched) {
+    logManualConfigHelp(format);
     return "manual";
   }
 
-  const replaced = contents.replace(
-    /module\.exports\s*=\s*{/,
-    `module.exports = {\n  webpack: (config) => {\n${WEBPACK_CONFIG_SNIPPET}\n    return config;\n  },`
-  );
-
-  if (replaced === contents) {
-    console.log(pc.yellow("⚠ Could not auto-inject Collie loader. Add this snippet manually:"));
-    console.log(pc.gray(MANUAL_CONFIG_SNIPPET.trimEnd()));
-    return "manual";
-  }
-
-  await fs.writeFile(configPath, replaced, "utf8");
+  await fs.writeFile(configPath, patched, "utf8");
   return "patched";
+}
+
+type ModuleFormat = "esm" | "cjs";
+
+function alreadyUsesCollie(source: string): boolean {
+  return /@collie-lang\/next/.test(source) || /\bwithCollie\s*\(/.test(source);
+}
+
+function detectModuleFormat(configPath: string, contents: string): ModuleFormat {
+  if (/module\.exports/.test(contents)) {
+    return "cjs";
+  }
+  if (/\bexport\s+default\b/.test(contents)) {
+    return "esm";
+  }
+  if (configPath.endsWith(".mjs") || configPath.endsWith(".ts")) {
+    return "esm";
+  }
+  return "cjs";
+}
+
+function patchCommonJsConfig(source: string): string | null {
+  let updated = ensureCommonJsImport(source);
+  let changed = updated !== source;
+  let needsExportLine = false;
+
+  if (/module\.exports\s*=\s*withCollie/.test(updated)) {
+    return null;
+  }
+
+  if (/module\.exports\s*=\s*nextConfig\s*;?/.test(updated)) {
+    updated = updated.replace(
+      /module\.exports\s*=\s*nextConfig\s*;?/,
+      "module.exports = withCollie(nextConfig);"
+    );
+    changed = true;
+  } else if (/module\.exports\s*=\s*{/.test(updated)) {
+    updated = updated.replace(/module\.exports\s*=\s*{/, "const nextConfig = {");
+    needsExportLine = true;
+    changed = true;
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  if (needsExportLine) {
+    updated = appendExport(updated, "module.exports = withCollie(nextConfig);");
+  }
+
+  return updated;
+}
+
+function patchEsmConfig(source: string): string | null {
+  let updated = ensureEsmImport(source);
+  let changed = updated !== source;
+  let needsExportLine = false;
+
+  if (/export\s+default\s+withCollie/.test(updated)) {
+    return null;
+  }
+
+  if (/export\s+default\s+nextConfig\s*;?/.test(updated)) {
+    updated = updated.replace(
+      /export\s+default\s+nextConfig\s*;?/,
+      "export default withCollie(nextConfig);"
+    );
+    changed = true;
+  } else if (/export\s+default\s*{/.test(updated)) {
+    updated = updated.replace(/export\s+default\s*{/, "const nextConfig = {");
+    needsExportLine = true;
+    changed = true;
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  if (needsExportLine) {
+    updated = appendExport(updated, "export default withCollie(nextConfig);");
+  }
+
+  return updated;
+}
+
+function ensureCommonJsImport(source: string): string {
+  if (/require\(["']@collie-lang\/next["']\)/.test(source)) {
+    return source;
+  }
+
+  const statement = `const withCollie = require("@collie-lang/next");\n`;
+  return insertAfterDirectives(source, statement);
+}
+
+function ensureEsmImport(source: string): string {
+  if (/from ["']@collie-lang\/next["']/.test(source)) {
+    return source;
+  }
+
+  const statement = `import withCollie from "@collie-lang/next";\n`;
+  return insertAfterDirectives(source, statement);
+}
+
+function insertAfterDirectives(source: string, statement: string): string {
+  const useStrictPattern = /^\s*["']use strict["'];?\s*/;
+  const match = source.match(useStrictPattern);
+  if (match) {
+    const idx = match[0].length;
+    return `${source.slice(0, idx)}\n${statement}${source.slice(idx)}`;
+  }
+  return `${statement}${source}`;
+}
+
+function appendExport(source: string, line: string): string {
+  const trimmed = source.trimEnd();
+  return `${trimmed}\n\n${line}\n`;
+}
+
+function logManualConfigHelp(format: ModuleFormat): void {
+  const snippet = format === "esm" ? MANUAL_ESM_SNIPPET : MANUAL_COMMONJS_SNIPPET;
+  console.log(pc.yellow("⚠ Could not auto-configure Next.js. Wrap your config manually:"));
+  console.log(pc.gray(snippet.trimEnd()));
 }
 
 async function writeTypeDeclarations(projectRoot: string): Promise<string> {
@@ -134,82 +260,30 @@ function resolvePrimaryDir(projectRoot: string): string {
   return "app";
 }
 
-const WEBPACK_LOADER_TEMPLATE = `const { compile } = require("@collie-lang/compiler");
-const path = require("path");
+const NEXT_CONFIG_TEMPLATE = `const withCollie = require("@collie-lang/next");
 
-module.exports = function collieLoader(source) {
-  const callback = this.async();
-  const filename = this.resourcePath;
-  const componentName = path.basename(filename, ".collie");
-
-  try {
-    const result = compile(source, {
-      filename,
-      componentNameHint: componentName,
-      jsxRuntime: "automatic"
-    });
-
-    for (const diag of result.diagnostics) {
-      if (diag.severity === "error") {
-        this.emitError(new Error(\`\${diag.file}: \${diag.message}\`));
-      } else {
-        this.emitWarning(new Error(\`\${diag.file}: \${diag.message}\`));
-      }
-    }
-
-    callback(null, result.code);
-  } catch (error) {
-    callback(error);
-  }
-};
-`;
-
-const NEXT_CONFIG_TEMPLATE = `/** @type {import('next').NextConfig} */
+/** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config) => {
-    config.module.rules.push({
-      test: /\\.collie$/,
-      use: [
-        {
-          loader: "babel-loader",
-          options: {
-            presets: ["next/babel"]
-          }
-        },
-        {
-          loader: require.resolve("./collie-loader.js")
-        }
-      ]
-    });
-
-    return config;
-  }
+  reactStrictMode: true
 };
 
-module.exports = nextConfig;
+module.exports = withCollie(nextConfig);
 `;
 
-const WEBPACK_CONFIG_SNIPPET = `    config.module.rules.push({
-      test: /\\.collie$/,
-      use: [
-        {
-          loader: "babel-loader",
-          options: { presets: ["next/babel"] }
-        },
-        {
-          loader: require.resolve("./collie-loader.js")
-        }
-      ]
-    });`;
+const MANUAL_COMMONJS_SNIPPET = `
+const withCollie = require("@collie-lang/next");
 
-const MANUAL_CONFIG_SNIPPET = `
-  config.module.rules.push({
-    test: /\\.collie$/,
-    use: [
-      { loader: "babel-loader", options: { presets: ["next/babel"] } },
-      { loader: require.resolve("./collie-loader.js") }
-    ]
-  });
+module.exports = withCollie({
+  // existing config
+});
+`;
+
+const MANUAL_ESM_SNIPPET = `
+import withCollie from "@collie-lang/next";
+
+export default withCollie({
+  // existing config
+});
 `;
 
 const TYPE_DECLARATION = `declare module "*.collie" {

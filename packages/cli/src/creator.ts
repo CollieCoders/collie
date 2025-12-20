@@ -30,7 +30,7 @@ const TEMPLATE_MAP: Record<string, TemplateMeta> = {
       js: "vite-react-js"
     }
   },
-  nextjs: {
+  "nextjs-app-router": {
     label: "Next.js App Router",
     description: "Next.js 14 App Router starter wired with @collie-lang/next",
     variants: {
@@ -52,9 +52,9 @@ interface ResolvedOptions {
 }
 
 const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {
-  next: { template: "nextjs" },
-  "nextjs-app": { template: "nextjs", forcedTypescript: true },
-  "nextjs-app-router": { template: "nextjs", forcedTypescript: true }
+  next: { template: "nextjs-app-router" },
+  nextjs: { template: "nextjs-app-router", forcedTypescript: true },
+  "nextjs-app": { template: "nextjs-app-router", forcedTypescript: true }
 };
 
 export async function create(options: CreateOptions = {}): Promise<void> {
