@@ -8,6 +8,28 @@ export type {
   SourcePos,
   SourceSpan
 } from "./diagnostics";
+export { parse } from "./parser";
+export type { ParseResult } from "./parser";
+export type {
+  Attribute,
+  ClassAliasDecl,
+  ClassAliasesDecl,
+  ComponentNode,
+  ConditionalBranch,
+  ConditionalNode,
+  ElementNode,
+  ExpressionNode,
+  ForNode,
+  JSXPassthroughNode,
+  Node,
+  PropsDecl,
+  PropsField,
+  RootNode,
+  TextChunk,
+  TextExprPart,
+  TextNode,
+  TextPart
+} from "./ast";
 
 export interface CompileOptions {
   filename?: string;
