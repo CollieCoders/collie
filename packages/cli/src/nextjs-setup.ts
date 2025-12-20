@@ -6,6 +6,7 @@ import pc from "picocolors";
 export interface NextJsSetupOptions {
   packageJson?: Record<string, any>;
   skipDetectionLog?: boolean;
+  collieNextVersion?: string;
 }
 
 export async function setupNextJs(projectRoot: string, options: NextJsSetupOptions = {}): Promise<void> {
@@ -22,7 +23,12 @@ export async function setupNextJs(projectRoot: string, options: NextJsSetupOptio
     console.log(pc.cyan("Detected Next.js project\n"));
   }
 
-  await writeCollieLoader(projectRoot);
+  const version = options.collieNextVersion && options.collieNextVersion !== "latest" ? options.collieNextVersion : "latest";
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  const addedDependency = await ensureCollieNextDependency(packageJsonPath, pkg, version);
+  if (addedDependency) {
+    console.log(pc.green("✔ Added @collie-lang/next to package.json"));
+  }
 
   const configResult = await patchNextConfig(projectRoot);
   if (configResult === "created" || configResult === "patched") {

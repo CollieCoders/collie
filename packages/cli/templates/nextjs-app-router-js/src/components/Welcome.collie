@@ -1,0 +1,11 @@
+export default function Welcome(props)
+  div.max-w-2xl.mx-auto.text-center
+    h1.text-5xl.font-bold.mb-4 Welcome to Collie + Next.js
+    p.text-xl.text-gray-600.mb-8 
+      | Build modern web applications with the power of Collie's 
+      | indentation-based templates and Next.js's performance.
+    
+    if props.showButton
+      button.bg-blue-500.hover:bg-blue-600.text-white.px-6.py-3.rounded-lg(
+        onClick={props.onButtonClick}
+      ) Get Started
