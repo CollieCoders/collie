@@ -1,0 +1,16 @@
+# __PROJECT_NAME__
+
+This project was scaffolded with `collie create` using the Vite + React + TypeScript template.
+
+## Available Scripts
+
+- `pnpm dev` – Start the Vite dev server.
+- `pnpm build` – Build the app for production.
+- `pnpm preview` – Preview the production build locally.
+
+## Collie Files
+
+- `src/components/Welcome.collie` is an example Collie component.
+- `src/collie.d.ts` enables TypeScript to understand `.collie` imports.
+
+Add new Collie templates inside `src/components` (or any folder you like) and import them just like regular React components.

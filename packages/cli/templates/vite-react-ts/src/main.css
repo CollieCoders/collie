@@ -1,0 +1,40 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f7f7fb;
+  color: #111;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.1);
+}
+
+.welcome-card h1 {
+  margin-top: 0;
+  font-size: 1.8rem;
+}
+
+.welcome-card p {
+  margin-bottom: 1.5rem;
+  color: #555;
+}
+
+.welcome-card .primary {
+  background: #111;
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  cursor: pointer;
+}

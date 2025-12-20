@@ -10,6 +10,8 @@ import { formatSource } from "./formatter";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
+import { check as runCheck } from "./checker";
+import { create as createProject } from "./creator";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 
@@ -37,6 +39,81 @@ async function main() {
       console.error(pc.red(`[collie] ${message}`));
       process.exit(1);
     }
+    return;
+  }
+
+  if (cmd === "check") {
+    const rest = args.slice(1);
+    const patterns = rest.filter((arg) => !arg.startsWith("-"));
+    if (patterns.length === 0) {
+      throw new Error("No file patterns provided. Usage: collie check <files...>");
+    }
+
+    const formatValue = getFlag(rest, "--format");
+    const format = formatValue ? validateFormatFlag(formatValue) : "text";
+    const maxWarningsValue = getFlag(rest, "--max-warnings");
+    let maxWarnings = -1;
+    if (maxWarningsValue !== undefined) {
+      const parsed = Number(maxWarningsValue);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error("--max-warnings expects a non-negative integer.");
+      }
+      maxWarnings = parsed;
+    }
+
+    const options = {
+      verbose: hasFlag(rest, "--verbose", "-v"),
+      format,
+      noWarnings: hasFlag(rest, "--no-warnings"),
+      maxWarnings: maxWarnings >= 0 ? maxWarnings : undefined
+    };
+
+    const result = await runCheck(patterns, options);
+
+    if (result.errorCount > 0) {
+      process.exitCode = 1;
+    } else if (maxWarnings >= 0 && result.warningCount > maxWarnings) {
+      console.error(
+        pc.red(
+          `Exceeded maximum warnings: ${result.warningCount} warning${
+            result.warningCount === 1 ? "" : "s"
+          } (limit ${maxWarnings})`
+        )
+      );
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (cmd === "create") {
+    const rest = args.slice(1);
+    let projectName: string | undefined;
+    const flagArgs: string[] = [];
+    for (const arg of rest) {
+      if (!projectName && !arg.startsWith("-")) {
+        projectName = arg;
+      } else {
+        flagArgs.push(arg);
+      }
+    }
+
+    const template = getFlag(flagArgs, "--template") as "vite" | "nextjs" | undefined;
+    const typescriptFlag = hasFlag(flagArgs, "--typescript");
+    const javascriptFlag = hasFlag(flagArgs, "--javascript");
+    if (typescriptFlag && javascriptFlag) {
+      throw new Error("Use only one of --typescript or --javascript.");
+    }
+
+    const options = {
+      projectName,
+      template,
+      typescript: typescriptFlag ? true : javascriptFlag ? false : undefined,
+      packageManager: getFlag(flagArgs, "--package-manager") as "npm" | "yarn" | "pnpm" | undefined,
+      noInstall: hasFlag(flagArgs, "--no-install"),
+      noGit: hasFlag(flagArgs, "--no-git")
+    };
+
+    await createProject(options);
     return;
   }
 
@@ -106,8 +183,10 @@ function printHelp() {
 Commands:
   collie init     Initialize Collie in a Vite+React project
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
+  collie check    Validate Collie templates (collie check \"src/**/*.collie\")
   collie watch    Watch and compile templates (collie watch src --outDir dist)
   collie build    Compile templates once (collie build src --outDir dist)
+  collie create   Scaffold a new Collie project (collie create my-app)
 `);
 }
 
@@ -562,6 +641,13 @@ function parseJsxRuntime(value?: string): "automatic" | "classic" {
     return value;
   }
   throw new Error('Invalid --jsx flag. Use "automatic" or "classic".');
+}
+
+function validateFormatFlag(value: string): "text" | "json" {
+  if (value === "text" || value === "json") {
+    return value;
+  }
+  throw new Error('Invalid --format flag. Use "text" or "json".');
 }
 
 main().catch((error) => {
