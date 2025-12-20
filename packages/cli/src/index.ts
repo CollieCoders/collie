@@ -8,6 +8,8 @@ import { diffLines } from "diff";
 import pc from "picocolors";
 import { formatSource } from "./formatter";
 import type { Diagnostic } from "@collie-lang/compiler";
+import { watch as watchCollie } from "./watcher";
+import { build as runBuild } from "./builder";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 
@@ -38,6 +40,50 @@ async function main() {
     return;
   }
 
+  if (cmd === "watch") {
+    const watchArgs = args.slice(1);
+    const inputPath = watchArgs[0];
+    if (!inputPath) {
+      throw new Error("No input path provided. Usage: collie watch <path>");
+    }
+    const flagArgs = watchArgs.slice(1);
+    const options = {
+      outDir: getFlag(flagArgs, "--outDir"),
+      sourcemap: hasFlag(flagArgs, "--sourcemap"),
+      ext: getFlag(flagArgs, "--ext"),
+      jsxRuntime: parseJsxRuntime(getFlag(flagArgs, "--jsx")),
+      verbose: hasFlag(flagArgs, "--verbose", "-v")
+    };
+    await watchCollie(inputPath, options);
+    return;
+  }
+
+  if (cmd === "build") {
+    const buildArgs = args.slice(1);
+    const inputPath = buildArgs[0];
+    if (!inputPath) {
+      throw new Error("No input path provided. Usage: collie build <path>");
+    }
+    const flagArgs = buildArgs.slice(1);
+    const verbose = hasFlag(flagArgs, "--verbose", "-v");
+    const quiet = hasFlag(flagArgs, "--quiet", "-q");
+    if (verbose && quiet) {
+      throw new Error("Cannot use --quiet and --verbose together.");
+    }
+    const options = {
+      outDir: getFlag(flagArgs, "--outDir"),
+      sourcemap: hasFlag(flagArgs, "--sourcemap"),
+      jsxRuntime: parseJsxRuntime(getFlag(flagArgs, "--jsx")),
+      verbose,
+      quiet
+    };
+    const result = await runBuild(inputPath, options);
+    if (result.errors.length > 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (cmd === "init") {
     try {
       await runInit();
@@ -60,6 +106,8 @@ function printHelp() {
 Commands:
   collie init     Initialize Collie in a Vite+React project
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
+  collie watch    Watch and compile templates (collie watch src --outDir dist)
+  collie build    Compile templates once (collie build src --outDir dist)
 `);
 }
 
@@ -488,6 +536,32 @@ function printDiff(file: string, before: string, after: string): void {
       console.log(color(`${prefix}${line}`));
     }
   }
+}
+
+function getFlag(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index === -1) {
+    return undefined;
+  }
+  const value = args[index + 1];
+  if (!value || value.startsWith("-")) {
+    throw new Error(`${flag} flag expects a value.`);
+  }
+  return value;
+}
+
+function hasFlag(args: string[], ...names: string[]): boolean {
+  return names.some((name) => args.includes(name));
+}
+
+function parseJsxRuntime(value?: string): "automatic" | "classic" {
+  if (!value) {
+    return "automatic";
+  }
+  if (value === "automatic" || value === "classic") {
+    return value;
+  }
+  throw new Error('Invalid --jsx flag. Use "automatic" or "classic".');
 }
 
 main().catch((error) => {

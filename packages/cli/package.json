@@ -17,6 +17,8 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
+    "@collie-lang/compiler": "workspace:*",
+    "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",
     "picocolors": "^1.1.1"
