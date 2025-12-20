@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fg from "fast-glob";
+import { diffLines } from "diff";
 import pc from "picocolors";
+import { formatSource } from "./formatter";
+import type { Diagnostic } from "@collie-lang/compiler";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 
@@ -20,6 +24,17 @@ async function main() {
 
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
     printHelp();
+    return;
+  }
+
+  if (cmd === "format") {
+    try {
+      await runFormat(args.slice(1));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(pc.red(`[collie] ${message}`));
+      process.exit(1);
+    }
     return;
   }
 
@@ -43,7 +58,8 @@ function printHelp() {
   console.log(`${pc.bold("collie")}
 
 Commands:
-  collie init   Initialize Collie in a Vite+React project
+  collie init     Initialize Collie in a Vite+React project
+  collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
 `);
 }
 
@@ -286,6 +302,192 @@ function runCommand(command: string, args: string[], cwd: string): Promise<void>
       else reject(new Error(`${command} ${args.join(" ")} exited with code ${code}`));
     });
   });
+}
+
+interface FormatFlags {
+  write: boolean;
+  check: boolean;
+  diff: boolean;
+  indent: number;
+  config?: string;
+}
+
+async function runFormat(args: string[]): Promise<void> {
+  const { patterns, flags } = parseFormatArgs(args);
+  if (patterns.length === 0) {
+    throw new Error("No file patterns provided. Usage: collie format <files...>");
+  }
+
+  const cwd = process.cwd();
+  const files = await fg(patterns, { cwd, onlyFiles: true, unique: true });
+  if (!files.length) {
+    console.log(pc.yellow("No files found"));
+    return;
+  }
+
+  files.sort();
+  let written = 0;
+  let needsFormatting = 0;
+  let failures = 0;
+
+  for (const file of files) {
+    let contents: string;
+    try {
+      contents = await fs.readFile(file, "utf8");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(pc.red(`[collie] Failed to read ${file}: ${message}`));
+      failures++;
+      continue;
+    }
+
+    let result;
+    try {
+      result = formatSource(contents, { indent: flags.indent });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(pc.red(`[collie] Failed to format ${file}: ${message}`));
+      failures++;
+      continue;
+    }
+
+    if (!result.success) {
+      printDiagnostics(file, result.diagnostics);
+      failures++;
+      continue;
+    }
+
+    const changed = result.formatted !== contents;
+
+    if (flags.diff && changed) {
+      printDiff(file, contents, result.formatted);
+    }
+
+    if (flags.check) {
+      if (changed) {
+        console.log(pc.red(`${file} needs formatting`));
+        needsFormatting++;
+      } else {
+        console.log(pc.green(`${file} is formatted`));
+      }
+      continue;
+    }
+
+    if (flags.write) {
+      if (changed) {
+        await fs.writeFile(file, result.formatted, "utf8");
+        written++;
+        console.log(pc.green(`Formatted ${file}`));
+      } else {
+        console.log(pc.dim(`${file} already formatted`));
+      }
+      continue;
+    }
+
+    if (!flags.diff) {
+      process.stdout.write(result.formatted);
+    }
+  }
+
+  if (flags.check) {
+    if (needsFormatting > 0) {
+      console.log(pc.red(`\n✖ ${needsFormatting} file${needsFormatting === 1 ? "" : "s"} need formatting`));
+      console.log(pc.dim("Run: collie format --write to fix"));
+      process.exitCode = 1;
+    } else {
+      console.log(pc.green("All files formatted"));
+    }
+  } else if (flags.write) {
+    console.log(pc.green(`Formatted ${written} file${written === 1 ? "" : "s"}`));
+  }
+
+  if (failures > 0) {
+    process.exitCode = 1;
+  }
+}
+
+function parseFormatArgs(args: string[]): { patterns: string[]; flags: FormatFlags } {
+  const flags: FormatFlags = { write: false, check: false, diff: false, indent: 2 };
+  const patterns: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--write" || arg === "-w") {
+      flags.write = true;
+      continue;
+    }
+    if (arg === "--check" || arg === "-c") {
+      flags.check = true;
+      continue;
+    }
+    if (arg === "--diff" || arg === "-d") {
+      flags.diff = true;
+      continue;
+    }
+    if (arg === "--indent") {
+      const value = args[i + 1];
+      if (!value) {
+        throw new Error("--indent flag expects a number.");
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 1) {
+        throw new Error("Indent width must be a positive integer.");
+      }
+      flags.indent = Math.floor(parsed);
+      i++;
+      continue;
+    }
+    if (arg === "--config") {
+      const value = args[i + 1];
+      if (!value) {
+        throw new Error("--config flag expects a path.");
+      }
+      flags.config = value;
+      i++;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    patterns.push(arg);
+  }
+
+  if (flags.write && flags.check) {
+    throw new Error("Cannot use --write and --check together.");
+  }
+
+  return { patterns, flags };
+}
+
+function printDiagnostics(file: string, diagnostics: Diagnostic[]): void {
+  for (const diag of diagnostics) {
+    const location = diag.span ? `${diag.span.start.line}:${diag.span.start.col}` : "";
+    const prefix = location ? `${file}:${location}` : file;
+    const codeSuffix = diag.code ? ` (${diag.code})` : "";
+    const message = `${prefix} ${diag.message}${codeSuffix}`;
+    if (diag.severity === "warning") {
+      console.warn(pc.yellow(message));
+    } else {
+      console.error(pc.red(message));
+    }
+  }
+}
+
+function printDiff(file: string, before: string, after: string): void {
+  console.log(pc.cyan(`diff -- ${file}`));
+  const diff = diffLines(before, after);
+  for (const part of diff) {
+    const prefix = part.added ? "+" : part.removed ? "-" : " ";
+    const color = part.added ? pc.green : part.removed ? pc.red : pc.dim;
+    const lines = part.value.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (i === lines.length - 1 && line === "") {
+        continue;
+      }
+      console.log(color(`${prefix}${line}`));
+    }
+  }
 }
 
 main().catch((error) => {
