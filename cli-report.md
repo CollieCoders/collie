@@ -1802,6 +1802,8 @@ if (cmd === "create") {
 
 ## Feature #6: `collie init --nextjs` - Next.js Support
 
+**Status**: ✅ Complete
+
 **Priority**: 🟠 High
 
 ### Value Proposition
