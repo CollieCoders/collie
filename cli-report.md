@@ -2230,6 +2230,8 @@ function printNextJsInstructions(): void {
 
 ## Feature #7: `.collierc` - Project Configuration File
 
+**Status**: ✅ Complete
+
 **Priority**: 🟡 Medium
 
 ### Value Proposition

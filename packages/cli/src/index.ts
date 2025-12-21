@@ -15,6 +15,7 @@ import { check as runCheck } from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import { loadAndValidateConfig, mergeConfig } from "./config";
+import { convertFile } from "./converter";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
@@ -148,6 +149,58 @@ async function main() {
     };
 
     await createProject(options);
+    return;
+  }
+
+  if (cmd === "convert") {
+    const rest = args.slice(1);
+    const patterns = rest.filter((arg) => !arg.startsWith("-"));
+    if (patterns.length === 0) {
+      throw new Error("No files provided. Usage: collie convert <files...>");
+    }
+    const write = hasFlag(rest, "--write", "-w");
+    const overwrite = hasFlag(rest, "--overwrite");
+    const removeOriginal = hasFlag(rest, "--remove-original");
+    if (removeOriginal && !write) {
+      throw new Error("--remove-original can only be used with --write.");
+    }
+
+    const files = await fg(patterns, {
+      absolute: false,
+      onlyFiles: true,
+      unique: true
+    });
+
+    if (!files.length) {
+      console.log(pc.yellow("No files matched the provided patterns."));
+      return;
+    }
+    files.sort();
+
+    const options = { write, overwrite, removeOriginal };
+    for (const file of files) {
+      try {
+        const result = await convertFile(file, options);
+        if (write) {
+          const target = result.outputPath ?? file.replace(/\.[tj]sx?$/, ".collie");
+          console.log(pc.green(`✔ Converted ${file} → ${target}`));
+        } else {
+          console.log(pc.gray(`// Converted from ${file}\n`));
+          process.stdout.write(result.collie);
+          if (!result.collie.endsWith("\n")) {
+            process.stdout.write("\n");
+          }
+          console.log("");
+        }
+        for (const warning of result.warnings) {
+          console.warn(pc.yellow(`⚠ ${file}: ${warning}`));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(pc.red(`✖ Failed to convert ${file}: ${message}`));
+        process.exitCode = 1;
+      }
+    }
     return;
   }
 
@@ -305,6 +358,7 @@ Commands:
   collie init     Initialize Collie in Vite or Next.js projects (--nextjs)
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
   collie check    Validate Collie templates (collie check \"src/**/*.collie\")
+  collie convert  Convert JSX/TSX to Collie templates (collie convert src/**/*.tsx --write)
   collie watch    Watch and compile templates (collie watch src --outDir dist)
   collie build    Compile templates once (collie build src --outDir dist)
   collie create   Scaffold a new Collie project (use --list-templates to view options)
