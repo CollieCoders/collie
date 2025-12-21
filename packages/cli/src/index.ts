@@ -16,6 +16,7 @@ import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import { loadAndValidateConfig, mergeConfig } from "./config";
 import { convertFile } from "./converter";
+import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
@@ -204,6 +205,27 @@ async function main() {
     return;
   }
 
+  if (cmd === "doctor") {
+    const rest = args.slice(1);
+    const jsonOutput = hasFlag(rest, "--json");
+    const subsystem = getFlag(rest, "--check");
+    const results = await runDoctor({ cwd: process.cwd() });
+    const filtered = filterDiagnostics(results, subsystem);
+    if (subsystem && filtered.length === 0) {
+      console.error(pc.red(`Unknown subsystem for --check: ${subsystem}`));
+      process.exit(1);
+    }
+    if (jsonOutput) {
+      console.log(JSON.stringify(filtered, null, 2));
+    } else {
+      printDoctorResults(filtered);
+    }
+    if (filtered.some((result) => result.status === "fail")) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (cmd === "watch") {
     const watchArgs = args.slice(1);
     const inputPath = watchArgs[0];
@@ -358,6 +380,7 @@ Commands:
   collie init     Initialize Collie in Vite or Next.js projects (--nextjs)
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
   collie check    Validate Collie templates (collie check \"src/**/*.collie\")
+  collie doctor   Diagnose setup issues (collie doctor --json)
   collie convert  Convert JSX/TSX to Collie templates (collie convert src/**/*.tsx --write)
   collie watch    Watch and compile templates (collie watch src --outDir dist)
   collie build    Compile templates once (collie build src --outDir dist)
