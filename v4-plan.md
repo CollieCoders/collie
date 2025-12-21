@@ -536,6 +536,8 @@ The VS Code extension must use the compiler for language semantics.
 
 ## **C2 — Make Next.js Directory Resolution Logic Robust and Predictable**
 
+**Status**: ✅ Complete
+
 **Repo:** `collie`
 
 ### Problem

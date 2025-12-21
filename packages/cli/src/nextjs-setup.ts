@@ -2,18 +2,11 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import { detectNextDirectory, type NextDirectoryInfo, type NextRouterType } from "@collie-lang/next";
 
 export interface NextJsSetupOptions {
   skipDetectionLog?: boolean;
   collieNextVersion?: string;
-}
-
-export type NextRouterType = "app" | "pages";
-
-export interface NextDirectoryInfo {
-  baseDir: string;
-  routerType: NextRouterType;
-  detected: boolean;
 }
 
 export async function setupNextJs(
@@ -294,20 +287,7 @@ async function writeExampleComponent(projectRoot: string, dir: NextDirectoryInfo
 }
 
 function resolvePrimaryDir(projectRoot: string): NextDirectoryInfo {
-  const candidates: Array<{ baseDir: string; routerType: NextRouterType }> = [
-    { baseDir: "app", routerType: "app" },
-    { baseDir: path.join("src", "app"), routerType: "app" },
-    { baseDir: "pages", routerType: "pages" },
-    { baseDir: path.join("src", "pages"), routerType: "pages" }
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(path.join(projectRoot, candidate.baseDir))) {
-      return { ...candidate, detected: true };
-    }
-  }
-
-  return { baseDir: "app", routerType: "app", detected: false };
+  return detectNextDirectory(projectRoot);
 }
 
 const NEXT_CONFIG_TEMPLATE = `const withCollie = require("@collie-lang/next");

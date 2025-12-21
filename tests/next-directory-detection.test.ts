@@ -47,6 +47,15 @@ describe("setupNextJs directory detection", () => {
       expect(existsSync(examplePath)).toBe(true);
     });
   }
+
+  it("skips writing files when no supported directory exists", async () => {
+    const projectRoot = createProjectWithoutDir();
+    const info = await setupNextJs(projectRoot, { skipDetectionLog: true, collieNextVersion: "0.0.0-test" });
+
+    expect(info.detected).toBe(false);
+    expect(existsSync(path.join(projectRoot, "app", "collie.d.ts"))).toBe(false);
+    expect(existsSync(path.join(projectRoot, "app", "components", "Welcome.collie"))).toBe(false);
+  });
 });
 
 function createProject(dirParts: string[]): string {
@@ -62,6 +71,21 @@ function createProject(dirParts: string[]): string {
   writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2));
   mkdirSync(path.join(root, ...dirParts), { recursive: true });
   // Seed an initial next.config.js so patcher exercises the patch path.
+  writeFileSync(path.join(root, "next.config.js"), "module.exports = {};\n");
+  return root;
+}
+
+function createProjectWithoutDir(): string {
+  const root = mkdtempSync(path.join(tmpdir(), "collie-next-missing-"));
+  sandboxes.push(root);
+  const pkg = {
+    name: "collie-next-temp",
+    version: "0.0.0",
+    dependencies: {
+      next: "14.0.0"
+    }
+  };
+  writeFileSync(path.join(root, "package.json"), JSON.stringify(pkg, null, 2));
   writeFileSync(path.join(root, "next.config.js"), "module.exports = {};\n");
   return root;
 }

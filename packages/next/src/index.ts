@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
-import { existsSync } from "node:fs";
-import path from "node:path";
+import { detectNextDirectory, type NextDirectoryInfo, type NextRouterType } from "./detect";
 
 export interface ColliePluginOptions {
   webpack?: NonNullable<NextConfig["webpack"]>;
@@ -61,29 +60,6 @@ function isCollieRule(rule: any): boolean {
   });
 }
 
-interface RouterDetection {
-  baseDir: string;
-  routerType: "app" | "pages";
-  detected: boolean;
-}
-
-function detectRouterRoot(projectRoot: string): RouterDetection {
-  const candidates: Array<{ baseDir: string; routerType: RouterDetection["routerType"] }> = [
-    { baseDir: "app", routerType: "app" },
-    { baseDir: path.join("src", "app"), routerType: "app" },
-    { baseDir: "pages", routerType: "pages" },
-    { baseDir: path.join("src", "pages"), routerType: "pages" }
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(path.join(projectRoot, candidate.baseDir))) {
-      return { ...candidate, detected: true };
-    }
-  }
-
-  return { baseDir: "app", routerType: "app", detected: false };
-}
-
 function shouldLogRouterInfo(): boolean {
   const flag = process.env.COLLIE_DEBUG ?? "";
   return flag.toLowerCase().includes("router");
@@ -103,7 +79,7 @@ export function withCollie(
       ensureLoader(config);
 
       if (webpackOptions?.dir) {
-        const routerInfo = detectRouterRoot(webpackOptions.dir);
+        const routerInfo = detectNextDirectory(webpackOptions.dir);
         if (routerInfo.detected) {
           if (shouldLogRouterInfo()) {
             console.log(
@@ -133,3 +109,5 @@ export function withCollie(
 }
 
 export default withCollie;
+export { detectNextDirectory };
+export type { NextDirectoryInfo, NextRouterType };
