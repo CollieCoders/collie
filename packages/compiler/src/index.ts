@@ -25,6 +25,7 @@ export type {
   PropsDecl,
   PropsField,
   RootNode,
+  SlotBlock,
   TextChunk,
   TextExprPart,
   TextNode,

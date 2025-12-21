@@ -187,6 +187,8 @@ When setting up Next.js integration (CLI and plugin), detection should follow th
 
 ## **A5 — Macro-Level Sugar: Slots and Conditional Guards**
 
+**Status**: ✅ Complete
+
 **Repo:** `collie`
 
 ### Problem

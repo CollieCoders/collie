@@ -12,6 +12,7 @@ import type {
   Node,
   PropsField,
   RootNode,
+  SlotBlock,
   TextNode
 } from "./ast";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
@@ -28,7 +29,14 @@ interface ConditionalBranchContext {
   children: Node[];
 }
 
-type ParentNode = RootNode | ElementNode | ComponentNode | ForNode | ConditionalBranchContext;
+interface SlotContext {
+  kind: "Slot";
+  owner: ComponentNode;
+  slot: SlotBlock;
+  children: Node[];
+}
+
+type ParentNode = RootNode | ElementNode | ComponentNode | ForNode | ConditionalBranchContext | SlotContext;
 
 interface StackItem {
   node: ParentNode;
@@ -475,6 +483,66 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    const slotMatch = trimmed.match(/^@([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (slotMatch) {
+      const slotName = slotMatch[1];
+      if (!isComponentNode(parent)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE501",
+          `Slot '${slotName}' must be a direct child of a component.`,
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        stack.push({ node: createStandaloneSlotContext(slotName), level });
+        continue;
+      }
+
+      if (!parent.slots) {
+        parent.slots = [];
+      }
+      const existing = parent.slots.find((slot) => slot.name === slotName);
+      const slotBlock: SlotBlock =
+        existing ??
+        {
+          type: "Slot",
+          name: slotName,
+          children: []
+        };
+      if (!existing) {
+        parent.slots.push(slotBlock);
+      } else {
+        pushDiag(
+          diagnostics,
+          "COLLIE503",
+          `Duplicate slot '${slotName}' inside ${parent.name}.`,
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      }
+      stack.push({ node: createSlotContext(parent, slotBlock), level });
+      continue;
+    }
+
+    if (trimmed.startsWith("@")) {
+      pushDiag(
+        diagnostics,
+        "COLLIE502",
+        "Invalid slot syntax. Use @slotName on its own line.",
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        trimmed.length
+      );
+      const fallbackName = trimmed.slice(1).split(/\s+/)[0] || "slot";
+      stack.push({ node: createStandaloneSlotContext(fallbackName), level });
+      continue;
+    }
+
     if (lineContent.startsWith("=")) {
       // Check if this starts a multiline JSX block
       const payload = lineContent.slice(1).trim();
@@ -626,6 +694,10 @@ function addChildToParent(parent: ParentNode, child: Node): void {
 
 function isForParent(parent: ParentNode): parent is ForNode {
   return "type" in parent && parent.type === "For";
+}
+
+function isComponentNode(parent: ParentNode): parent is ComponentNode {
+  return "type" in parent && parent.type === "Component";
 }
 
 interface ConditionalHeaderResult {
@@ -821,6 +893,26 @@ function createConditionalBranchContext(
     branch,
     children: branch.body
   };
+}
+
+function createSlotContext(owner: ComponentNode, slot: SlotBlock): SlotContext {
+  return {
+    kind: "Slot",
+    owner,
+    slot,
+    children: slot.children
+  };
+}
+
+function createStandaloneSlotContext(name: string): SlotContext {
+  const owner: ComponentNode = {
+    type: "Component",
+    name: "__invalid_slot__",
+    attributes: [],
+    children: []
+  };
+  const slot: SlotBlock = { type: "Slot", name, children: [] };
+  return createSlotContext(owner, slot);
 }
 
 function parseTextLine(
@@ -1249,6 +1341,13 @@ function validateNodeClassAliases(
     for (const child of node.children) {
       validateNodeClassAliases(child, defined, diagnostics);
     }
+    if (node.type === "Component" && node.slots) {
+      for (const slot of node.slots) {
+        for (const child of slot.children) {
+          validateNodeClassAliases(child, defined, diagnostics);
+        }
+      }
+    }
     return;
   }
 
@@ -1343,6 +1442,33 @@ function parseElement(
     cursor = attrResult.endIndex;
   }
 
+  // Parse optional guard expression
+  let guard: string | undefined;
+  const guardProbeStart = cursor;
+  while (cursor < line.length && /\s/.test(line[cursor])) {
+    cursor++;
+  }
+  if (cursor < line.length && line[cursor] === "?") {
+    const guardColumn = column + cursor;
+    cursor++;
+    const guardExpr = line.slice(cursor).trim();
+    if (!guardExpr) {
+      pushDiag(
+        diagnostics,
+        "COLLIE601",
+        "Guard expressions require a condition after '?'.",
+        lineNumber,
+        guardColumn,
+        lineOffset
+      );
+    } else {
+      guard = guardExpr;
+    }
+    cursor = line.length;
+  } else {
+    cursor = guardProbeStart;
+  }
+
   // Parse inline text or children
   let rest = line.slice(cursor).trimStart();
   const children: Node[] = [];
@@ -1356,12 +1482,16 @@ function parseElement(
   }
 
   if (isComponent) {
-    return {
+    const component: ComponentNode = {
       type: "Component",
       name,
       attributes,
       children
     };
+    if (guard) {
+      component.guard = guard;
+    }
+    return component;
   } else {
     const element: ElementNode = {
       type: "Element",
@@ -1372,6 +1502,9 @@ function parseElement(
     };
     if (classSpans.length) {
       element.classSpans = classSpans;
+    }
+    if (guard) {
+      element.guard = guard;
     }
     return element;
   }

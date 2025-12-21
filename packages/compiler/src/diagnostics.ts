@@ -26,7 +26,11 @@ export type DiagnosticCode =
   | "COLLIE306"
   | "COLLIE307"
   | "COLLIE401"
-  | "COLLIE402";
+  | "COLLIE402"
+  | "COLLIE501"
+  | "COLLIE502"
+  | "COLLIE503"
+  | "COLLIE601";
 
 export interface SourcePos {
   line: number;
