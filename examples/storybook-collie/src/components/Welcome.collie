@@ -1,0 +1,8 @@
+props
+  name: string = "Storyteller"
+
+div.card
+  h2
+    "Hello, {name}!"
+  p
+    "This component is powered by Collie."

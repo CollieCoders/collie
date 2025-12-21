@@ -1,0 +1,8 @@
+props
+  name: string = "friend"
+  Container: any
+  Label: any
+
+Container
+  Label
+    "Hello, {name}!"

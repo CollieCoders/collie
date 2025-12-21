@@ -340,6 +340,8 @@ No runtime dependency should be required; everything must compile down to standa
 
 ## **A6 — Storybook and React Native / Expo Adapters**
 
+**Status**: ✅ Complete
+
 **Repo:** `collie`
 
 ### Problem
@@ -467,7 +469,7 @@ Provide:
 
 ## **C1 — Eliminate Spec Drift Between Compiler and VS Code Parser**
 
-**Repos:** `collie` and `collie-vscode` (but primarily resolved via B1)
+**Repos:** `collie`
 
 ### Problem
 
