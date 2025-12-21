@@ -21,7 +21,7 @@
     "dev": "tsup --watch",
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx tests/classes.test.ts && tsx tests/props.test.ts",
+    "test": "tsx tests/classes.test.ts && tsx tests/props.test.ts && tsx tests/directives.test.ts",
     "lint": "echo \"(mvp) no lint configured\""
   },
   "devDependencies": {

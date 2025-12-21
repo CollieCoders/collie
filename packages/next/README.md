@@ -114,16 +114,18 @@ export default async function Page() {
 
 ## Client Components
 
-Wrap interactive Collie templates inside a client module:
+Mark a Collie template as a client component with the `@client` directive:
 
-```tsx
-// components/CounterWrapper.tsx
-'use client';
-import CounterTemplate from './Counter.collie';
-import { useState } from 'react';
+```collie
+// components/Counter.collie
+@client
+props
+  count: number
+  onIncrement: () => void
 
-export default function CounterWrapper() {
-  const [count, setCount] = useState(0);
-  return <CounterTemplate count={count} onIncrement={() => setCount(count + 1)} />;
-}
+div.counter
+  button(onClick={onIncrement})
+    "Count: {count}"
 ```
+
+Collie will emit `"use client";` at the top of the generated module automatically, so you can import `Counter.collie` directly inside App or Pages Router files.

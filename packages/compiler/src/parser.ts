@@ -207,6 +207,43 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    if (trimmed === "@client") {
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE401",
+          "@client must appear at the top level before any other blocks.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (sawTopLevelTemplateNode) {
+        pushDiag(
+          diagnostics,
+          "COLLIE401",
+          "@client must appear before any template nodes.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (root.clientComponent) {
+        pushDiag(
+          diagnostics,
+          "COLLIE402",
+          "@client can only appear once per file.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else {
+        root.clientComponent = true;
+      }
+      continue;
+    }
+
     if (propsBlockLevel !== null && level > propsBlockLevel) {
       if (level !== propsBlockLevel + 1) {
         pushDiag(

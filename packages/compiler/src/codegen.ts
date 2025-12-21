@@ -27,6 +27,10 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
 
   const parts: string[] = [];
 
+  if (root.clientComponent) {
+    parts.push(`"use client";`);
+  }
+
   // Classic runtime needs React in scope for JSX transforms.
   if (jsxRuntime === "classic" && templateUsesJsx(root)) {
     parts.push(`import React from "react";`);

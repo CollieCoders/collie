@@ -8,7 +8,18 @@ export interface NextJsSetupOptions {
   collieNextVersion?: string;
 }
 
-export async function setupNextJs(projectRoot: string, options: NextJsSetupOptions = {}): Promise<void> {
+export type NextRouterType = "app" | "pages";
+
+export interface NextDirectoryInfo {
+  baseDir: string;
+  routerType: NextRouterType;
+  detected: boolean;
+}
+
+export async function setupNextJs(
+  projectRoot: string,
+  options: NextJsSetupOptions = {}
+): Promise<NextDirectoryInfo> {
   const pkg = await readPackageJson(projectRoot);
   if (!pkg) {
     throw new Error("package.json not found. Run this inside your Next.js project.");
@@ -34,11 +45,35 @@ export async function setupNextJs(projectRoot: string, options: NextJsSetupOptio
     console.log(pc.green("✔ Configured next.config.js"));
   }
 
-  const declarationPath = await writeTypeDeclarations(projectRoot);
-  console.log(pc.green(`✔ Writing type declarations: ${path.relative(projectRoot, declarationPath)}`));
+  const nextDirectory = resolvePrimaryDir(projectRoot);
+  if (nextDirectory.detected) {
+    console.log(
+      pc.cyan(
+        `Detected Next.js ${nextDirectory.routerType === "app" ? "App Router" : "Pages Router"} root: ${nextDirectory.baseDir}`
+      )
+    );
+    const declarationPath = await writeTypeDeclarations(projectRoot, nextDirectory);
+    console.log(pc.green(`✔ Writing type declarations: ${path.relative(projectRoot, declarationPath)}`));
 
-  const examplePath = await writeExampleComponent(projectRoot);
-  console.log(pc.green(`✔ Created example component: ${path.relative(projectRoot, examplePath)}`));
+    const exampleResult = await writeExampleComponent(projectRoot, nextDirectory);
+    if (exampleResult.created) {
+      console.log(pc.green(`✔ Created example component: ${path.relative(projectRoot, exampleResult.path)}`));
+    } else {
+      console.log(
+        pc.yellow(
+          `⚠ Example component already exists, skipping: ${path.relative(projectRoot, exampleResult.path)}`
+        )
+      );
+    }
+  } else {
+    console.log(
+      pc.yellow(
+        "⚠ No app/, src/app/, pages/, or src/pages/ directory detected. Create one and re-run `collie init --nextjs`."
+      )
+    );
+  }
+
+  return nextDirectory;
 }
 
 export function hasNextDependency(pkg: Record<string, any>): boolean {
@@ -234,30 +269,45 @@ function logManualConfigHelp(format: ModuleFormat): void {
   console.log(pc.gray(snippet.trimEnd()));
 }
 
-async function writeTypeDeclarations(projectRoot: string): Promise<string> {
-  const baseDir = resolvePrimaryDir(projectRoot);
-  const declPath = path.join(projectRoot, baseDir, "collie.d.ts");
+async function writeTypeDeclarations(projectRoot: string, dir: NextDirectoryInfo): Promise<string> {
+  const declPath = path.join(projectRoot, dir.baseDir, "collie.d.ts");
   await fs.mkdir(path.dirname(declPath), { recursive: true });
   await fs.writeFile(declPath, TYPE_DECLARATION, "utf8");
   return declPath;
 }
 
-async function writeExampleComponent(projectRoot: string): Promise<string> {
-  const baseDir = resolvePrimaryDir(projectRoot);
-  const examplePath = path.join(projectRoot, baseDir, "components", "Welcome.collie");
-  await fs.mkdir(path.dirname(examplePath), { recursive: true });
-  await fs.writeFile(examplePath, EXAMPLE_COMPONENT, "utf8");
-  return examplePath;
+interface ExampleWriteResult {
+  path: string;
+  created: boolean;
 }
 
-function resolvePrimaryDir(projectRoot: string): string {
-  if (existsSync(path.join(projectRoot, "app"))) {
-    return "app";
+async function writeExampleComponent(projectRoot: string, dir: NextDirectoryInfo): Promise<ExampleWriteResult> {
+  const examplePath = path.join(projectRoot, dir.baseDir, "components", "Welcome.collie");
+  await fs.mkdir(path.dirname(examplePath), { recursive: true });
+
+  if (existsSync(examplePath)) {
+    return { path: examplePath, created: false };
   }
-  if (existsSync(path.join(projectRoot, "src"))) {
-    return "src";
+
+  await fs.writeFile(examplePath, EXAMPLE_COMPONENT, "utf8");
+  return { path: examplePath, created: true };
+}
+
+function resolvePrimaryDir(projectRoot: string): NextDirectoryInfo {
+  const candidates: Array<{ baseDir: string; routerType: NextRouterType }> = [
+    { baseDir: "app", routerType: "app" },
+    { baseDir: path.join("src", "app"), routerType: "app" },
+    { baseDir: "pages", routerType: "pages" },
+    { baseDir: path.join("src", "pages"), routerType: "pages" }
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(path.join(projectRoot, candidate.baseDir))) {
+      return { ...candidate, detected: true };
+    }
   }
-  return "app";
+
+  return { baseDir: "app", routerType: "app", detected: false };
 }
 
 const NEXT_CONFIG_TEMPLATE = `const withCollie = require("@collie-lang/next");

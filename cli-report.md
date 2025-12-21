@@ -2845,6 +2845,8 @@ if (cmd === "convert") {
 
 ## Feature #9: `collie doctor` - Environment Diagnostics
 
+**Status**: ✅ Complete
+
 **Priority**: 🟡 Medium
 
 ### Value Proposition

@@ -14,6 +14,7 @@ import { build as runBuild } from "./builder";
 import { check as runCheck } from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
+import type { NextDirectoryInfo } from "./nextjs-setup";
 import { loadAndValidateConfig, mergeConfig } from "./config";
 import { convertFile } from "./converter";
 import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
@@ -419,8 +420,11 @@ async function runInit(options: InitOptions = {}): Promise<void> {
       console.log(pc.green("✔ Installed @collie-lang/next"));
     }
 
-    await setupNextJs(projectRoot, { skipDetectionLog: true, collieNextVersion: COLLIE_NEXT_VERSION_RANGE });
-    printNextJsInstructions();
+    const nextDirectory = await setupNextJs(projectRoot, {
+      skipDetectionLog: true,
+      collieNextVersion: COLLIE_NEXT_VERSION_RANGE
+    });
+    printNextJsInstructions(nextDirectory);
     return;
   }
 
@@ -709,14 +713,20 @@ function printNextSteps(pkgManager: PackageManager, configPath: string): void {
   console.log(`  - Need to adjust plugins later? Edit ${path.basename(configPath)}.`);
 }
 
-function printNextJsInstructions(): void {
+function printNextJsInstructions(info?: NextDirectoryInfo): void {
+  const detected = info?.detected ?? false;
+  const routerLabel = detected ? (info?.routerType === "app" ? "App Router" : "Pages Router") : "Next.js";
+  const baseDirDisplay = (detected ? info?.baseDir ?? "app" : "app").replace(/\\/g, "/");
+  const entryFile = info?.routerType === "pages" ? "index.tsx" : "page.tsx";
+  const entryDisplay = `${baseDirDisplay}/${entryFile}`.replace(/\/+/g, "/");
+
   console.log(pc.green("\n🎉 Collie is ready for Next.js!\n"));
-  console.log(pc.cyan("Next steps:"));
-  console.log("  - Import .collie components in your app:");
-  console.log(pc.gray("    import Welcome from './components/Welcome.collie'"));
+  console.log(pc.cyan(`Next steps (${routerLabel}):`));
+  console.log(`  - Import .collie components inside ${entryDisplay}:`);
+  console.log(pc.gray(`    import Welcome from "./components/Welcome.collie"`));
   console.log("");
-  console.log("  - For App Router, components work as Server Components by default");
-  console.log("  - For client components, add 'use client' to your .collie file");
+  console.log("  - Collie components render as Server Components by default.");
+  console.log("  - Add @client at the top of a .collie file to opt into a Client Component.");
   console.log("");
   console.log("  - Run your Next.js dev server:");
   console.log(pc.gray("    npm run dev"));
