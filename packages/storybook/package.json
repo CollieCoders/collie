@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/storybook",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Storybook adapter for Collie templates.",
   "license": "MIT",
   "type": "module",
@@ -14,8 +14,12 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
