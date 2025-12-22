@@ -4,7 +4,8 @@
   "description": "Storybook adapter for Collie templates.",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
@@ -19,7 +20,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
     "@collie-lang/vite": "workspace:*",

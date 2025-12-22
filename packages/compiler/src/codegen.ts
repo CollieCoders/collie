@@ -17,10 +17,12 @@ import type {
 export interface CodegenOptions {
   componentName: string;
   jsxRuntime: "automatic" | "classic";
+  flavor: "jsx" | "tsx";
 }
 
 export function generateModule(root: RootNode, options: CodegenOptions): string {
-  const { componentName, jsxRuntime } = options;
+  const { componentName, jsxRuntime, flavor } = options;
+  const isTsx = flavor === "tsx";
 
   const aliasEnv = buildClassAliasEnvironment(root.classAliases);
   const jsx = renderRootChildren(root.children, aliasEnv);
@@ -38,13 +40,19 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   }
 
   // JS-safe typedef for Props (JSDoc)
-  parts.push(emitPropsType(root.props));
+  parts.push(emitPropsType(root.props, flavor));
 
-  // JS-safe param typing (JSDoc), so tooling can still understand Props.
-  parts.push(`/** @param {Props} props */`);
+  if (!isTsx) {
+    // JS-safe param typing (JSDoc), so tooling can still understand Props.
+    parts.push(`/** @param {Props} props */`);
+  }
 
   // IMPORTANT: Do not emit TypeScript annotations here.
-  const functionLines = [`export default function ${componentName}(props) {`];
+  const functionLines = [
+    isTsx
+      ? `export default function ${componentName}(props: Props) {`
+      : `export default function ${componentName}(props) {`
+  ];
   if (propsDestructure) {
     functionLines.push(`  ${propsDestructure}`);
   }
@@ -353,7 +361,14 @@ function emitSingleNodeExpression(
   return emitNodeInJsx(node, aliasEnv);
 }
 
-function emitPropsType(props?: PropsDecl): string {
+function emitPropsType(props: PropsDecl | undefined, flavor: "jsx" | "tsx"): string {
+  if (flavor === "tsx") {
+    return emitTsPropsType(props);
+  }
+  return emitJsDocPropsType(props);
+}
+
+function emitJsDocPropsType(props?: PropsDecl): string {
   // Emit JS-safe JSDoc typedef (Rollup can parse this, and TS tooling can read it).
   if (!props) {
     return "/** @typedef {any} Props */";
@@ -371,6 +386,19 @@ function emitPropsType(props?: PropsDecl): string {
     .join("; ");
 
   return `/** @typedef {{ ${fields} }} Props */`;
+}
+
+function emitTsPropsType(props?: PropsDecl): string {
+  if (!props || props.fields.length === 0) {
+    return "export type Props = Record<string, never>;";
+  }
+
+  const lines = props.fields.map((field) => {
+    const optional = field.optional ? "?" : "";
+    return `  ${field.name}${optional}: ${field.typeText};`;
+  });
+
+  return ["export interface Props {", ...lines, "}"].join("\n");
 }
 
 function emitPropsDestructure(props?: PropsDecl): string | null {
