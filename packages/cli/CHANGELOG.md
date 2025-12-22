@@ -1,5 +1,13 @@
 # @collie-lang/cli
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [4111aa0]
+  - @collie-lang/compiler@2.0.0
+  - @collie-lang/next@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

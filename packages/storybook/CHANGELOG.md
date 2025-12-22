@@ -1,5 +1,12 @@
 # @collie-lang/storybook
 
+## 1.0.1
+
+### Patch Changes
+
+- @collie-lang/vite@1.0.1
+- @collie-lang/webpack@1.0.1
+
 ## 1.0.0
 
 ### Major Changes
