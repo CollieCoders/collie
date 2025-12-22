@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
-import { detectNextDirectory, type NextDirectoryInfo, type NextRouterType } from "@collie-lang/next";
+import { detectNextDirectory } from "@collie-lang/next";
+import type { NextDirectoryInfo, NextRouterType } from "@collie-lang/next";
+export type { NextDirectoryInfo, NextRouterType } from "@collie-lang/next";
 
 export interface NextJsSetupOptions {
   skipDetectionLog?: boolean;

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { LoaderContext } from "webpack";
 import type { Diagnostic } from "@collie-lang/compiler";
-import { compile } from "@collie-lang/compiler";
+import { compileToJsx } from "@collie-lang/compiler";
 
 function formatDiagnostic(filePath: string, diagnostic: Diagnostic): string {
   const file = diagnostic.file ?? filePath;
@@ -30,15 +30,17 @@ export default function collieLoader(
   const filePath = this.resourcePath;
 
   try {
-    const result = compile(source, {
+    const result = compileToJsx(source, {
       filename: filePath,
       componentNameHint: toComponentNameHint(filePath),
       jsxRuntime: "automatic"
     });
 
-    const errors = result.diagnostics.filter((d) => d.severity === "error");
+    const errors = result.diagnostics.filter(
+      (d): d is Diagnostic => d.severity === "error"
+    );
     if (errors.length) {
-      const message = errors.map((diag) => formatDiagnostic(filePath, diag)).join("\n");
+      const message = errors.map((diag: Diagnostic) => formatDiagnostic(filePath, diag)).join("\n");
       callback(new Error(`[collie] Collie compilation failed:\n${message}`));
       return;
     }

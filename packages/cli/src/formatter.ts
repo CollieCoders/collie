@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import {
-  parse,
+  parseCollie,
   type Attribute,
   type ClassAliasesDecl,
   type Diagnostic,
@@ -28,7 +28,7 @@ export interface FormatFileResult extends FormatSourceResult {
 export function formatSource(source: string, options: FormatOptions = {}): FormatSourceResult {
   const indentSize = validateIndentOption(options.indent);
   const normalized = source.replace(/\r\n?/g, "\n");
-  const parseResult = parse(normalized);
+  const parseResult = parseCollie(normalized);
   const hasErrors = parseResult.diagnostics.some((diag) => diag.severity === "error");
 
   if (hasErrors) {

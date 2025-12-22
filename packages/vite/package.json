@@ -4,12 +4,14 @@
   "description": "Vite plugin for Collie (.collie -> React component).",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": ["dist"],
@@ -23,6 +25,9 @@
   },
   "dependencies": {
     "@collie-lang/compiler": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": "^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
   },
   "devDependencies": {
     "vite": "^7.3.0",

@@ -1,5 +1,5 @@
 import fg from "fast-glob";
-import { parse, type Diagnostic } from "@collie-lang/compiler";
+import { parseCollie, type Diagnostic } from "@collie-lang/compiler";
 import fs from "node:fs/promises";
 import path from "node:path";
 import pc from "picocolors";
@@ -48,7 +48,7 @@ export async function check(patterns: string[], options: CheckOptions = {}): Pro
       const source = await fs.readFile(file, "utf8");
       lineCache.set(displayPath, source.split(/\r?\n/));
 
-      const parseResult = parse(source);
+      const parseResult = parseCollie(source);
       for (const diag of parseResult.diagnostics) {
         const normalized: Diagnostic = {
           ...diag,

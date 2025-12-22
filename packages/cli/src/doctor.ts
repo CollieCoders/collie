@@ -1,4 +1,4 @@
-import { compile } from "@collie-lang/compiler";
+import { compileToJsx } from "@collie-lang/compiler";
 import fg from "fast-glob";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -375,7 +375,7 @@ async function testCompilation(): Promise<DiagnosticResult> {
     "\n"
   );
   try {
-    const result = compile(template, { componentNameHint: "DoctorCheck" });
+    const result = compileToJsx(template, { componentNameHint: "DoctorCheck" });
     const hasError = result.diagnostics.some((diag) => diag.severity === "error");
     if (hasError) {
       return {

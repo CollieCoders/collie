@@ -1,5 +1,5 @@
 import chokidar from "chokidar";
-import { compile, type CompileOptions, type Diagnostic } from "@collie-lang/compiler";
+import { compileToTsx, type Diagnostic, type TsxCompileOptions } from "@collie-lang/compiler";
 import fs from "node:fs/promises";
 import path from "node:path";
 import pc from "picocolors";
@@ -80,13 +80,13 @@ async function compileFile(
     const source = await fs.readFile(filepath, "utf8");
     const componentName = path.basename(filepath, path.extname(filepath));
 
-    const compileOptions: CompileOptions = {
+    const compileOptions: TsxCompileOptions = {
       filename: filepath,
       componentNameHint: componentName,
       jsxRuntime: options.jsxRuntime ?? "automatic"
     };
 
-    const result = compile(source, compileOptions);
+    const result = compileToTsx(source, compileOptions);
     const errors = result.diagnostics.filter((d) => d.severity === "error");
     if (errors.length) {
       logDiagnostics(filepath, errors);

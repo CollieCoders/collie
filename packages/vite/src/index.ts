@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import type { Plugin } from "vite";
 import { transformWithEsbuild } from "vite";
 import type { Diagnostic } from "@collie-lang/compiler";
-import { compile } from "@collie-lang/compiler";
+import { compileToTsx } from "@collie-lang/compiler";
 
 type JsxRuntime = "automatic" | "classic";
 
@@ -50,7 +50,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       const filePath = stripQuery(id);
       const source = await fs.readFile(filePath, "utf-8");
 
-      const result = compile(source, {
+      const result = compileToTsx(source, {
         filename: filePath,
         componentNameHint: toComponentNameHint(filePath),
         jsxRuntime: resolvedRuntime

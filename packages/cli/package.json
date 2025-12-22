@@ -4,6 +4,16 @@
   "description": "Collie CLI (init a Vite project with Collie).",
   "license": "MIT",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "bin": {
     "collie": "./dist/index.js"
   },
@@ -26,6 +36,8 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@types/diff": "^5.0.3",
+    "@types/prompts": "^2.4.9",
     "typescript": "^5.7.2"
   }
 }

@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Diagnostic } from "@collie-lang/compiler";
-import { compile } from "@collie-lang/compiler";
+import { compileToJsx } from "@collie-lang/compiler";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const defaultMetroTransformer = require("metro-react-native-babel-transformer");
@@ -33,7 +33,7 @@ export function createCollieMetroTransformer(options: CollieMetroTransformerOpti
   return {
     async transform(props: TransformInput): Promise<TransformResult> {
       if (props.filename.endsWith(".collie")) {
-        const result = compile(props.src, {
+        const result = compileToJsx(props.src, {
           filename: props.filename,
           componentNameHint: toComponentNameHint(props.filename),
           jsxRuntime: "automatic"
