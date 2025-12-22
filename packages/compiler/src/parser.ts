@@ -1373,15 +1373,21 @@ function parseElement(
   lineOffset: number,
   diagnostics: Diagnostic[]
 ): ElementNode | ComponentNode | null {
-  // First, try to match tag name
-  const nameMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)/);
-  if (!nameMatch) {
-    // Don't push diagnostic here - let the caller handle fallback to text
-    return null;
-  }
+  let name: string;
+  let cursor = 0;
 
-  const name = nameMatch[1];
-  let cursor = name.length;
+  if (line[cursor] === ".") {
+    // Implicit div shorthand (e.g. `.foo` -> `div.foo`)
+    name = "div";
+  } else {
+    const nameMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)/);
+    if (!nameMatch) {
+      // Don't push diagnostic here - let the caller handle fallback to text
+      return null;
+    }
+    name = nameMatch[1];
+    cursor = name.length;
+  }
 
   // Check what follows the name
   const nextPart = line.slice(cursor);
