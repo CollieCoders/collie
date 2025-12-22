@@ -1,9 +1,0 @@
-props
-  name: string
-
-classes
-  homeContainer = mt-4.p-4.bg-red-100.text-red-700.rounded-lg.border.border-red-300
-
-div.$homeContainer
-  h2.mb-10 Welcome from Collie
-  h3 Hello, {{ name }}!
