@@ -1,5 +1,11 @@
 # @collie-lang/compiler
 
+## 3.0.0
+
+### Major Changes
+
+- 2c8979d: Test 2.1.1
+
 ## 2.0.0
 
 ### Major Changes

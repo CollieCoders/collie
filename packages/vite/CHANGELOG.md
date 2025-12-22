@@ -1,5 +1,12 @@
 # @collie-lang/vite
 
+## 1.0.2
+
+### Patch Changes
+
+- Updated dependencies [2c8979d]
+  - @collie-lang/compiler@3.0.0
+
 ## 1.0.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @collie-lang/storybook
 
+## 1.0.2
+
+### Patch Changes
+
+- Updated dependencies [2c8979d]
+  - @collie-lang/webpack@2.0.0
+  - @collie-lang/vite@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes
