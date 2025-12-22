@@ -10,6 +10,7 @@ import type {
   Node,
   PropsDecl,
   RootNode,
+  SlotBlock,
   TextNode
 } from "./ast";
 
@@ -26,6 +27,10 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   const propsDestructure = emitPropsDestructure(root.props);
 
   const parts: string[] = [];
+
+  if (root.clientComponent) {
+    parts.push(`"use client";`);
+  }
 
   // Classic runtime needs React in scope for JSX transforms.
   if (jsxRuntime === "classic" && templateUsesJsx(root)) {
@@ -119,9 +124,9 @@ function emitNodeInJsx(node: Node, aliasEnv: Map<string, readonly string[]>): st
     return `{${emitForExpression(node, aliasEnv)}}`;
   }
   if (node.type === "Component") {
-    return emitComponent(node, aliasEnv);
+    return wrapWithGuard(emitComponent(node, aliasEnv), node.guard, "jsx");
   }
-  return emitElement(node, aliasEnv);
+  return wrapWithGuard(emitElement(node, aliasEnv), node.guard, "jsx");
 }
 
 function emitElement(
@@ -146,12 +151,14 @@ function emitComponent(
   aliasEnv: Map<string, readonly string[]>
 ): string {
   const attrs = emitAttributes(node.attributes, aliasEnv);
+  const slotProps = emitSlotProps(node, aliasEnv);
+  const allAttrs = `${attrs}${slotProps}`;
   const children = emitChildrenWithSpacing(node.children, aliasEnv);
   
   if (children.length > 0) {
-    return `<${node.name}${attrs}>${children}</${node.name}>`;
+    return `<${node.name}${allAttrs}>${children}</${node.name}>`;
   } else {
-    return `<${node.name}${attrs} />`;
+    return `<${node.name}${allAttrs} />`;
   }
 }
 
@@ -201,6 +208,29 @@ function emitAttributes(
     // The value is already in the correct format (e.g., {expr} or "string")
     return ` ${attr.name}=${attr.value}`;
   }).join("");
+}
+
+function emitSlotProps(
+  node: ComponentNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  if (!node.slots || node.slots.length === 0) {
+    return "";
+  }
+  return node.slots
+    .map((slot) => {
+      const expr = emitNodesExpression(slot.children, aliasEnv);
+      return ` ${slot.name}={${expr}}`;
+    })
+    .join("");
+}
+
+function wrapWithGuard(rendered: string, guard: string | undefined, context: "jsx" | "expression"): string {
+  if (!guard) {
+    return rendered;
+  }
+  const expression = `(${guard}) && ${rendered}`;
+  return context === "jsx" ? `{${expression}}` : expression;
 }
 
 function emitForExpression(
@@ -310,6 +340,12 @@ function emitSingleNodeExpression(
   }
   if (node.type === "For") {
     return emitForExpression(node, aliasEnv);
+  }
+  if (node.type === "Element") {
+    return wrapWithGuard(emitElement(node, aliasEnv), node.guard, "expression");
+  }
+  if (node.type === "Component") {
+    return wrapWithGuard(emitComponent(node, aliasEnv), node.guard, "expression");
   }
   if (node.type === "Text") {
     return `<>${emitNodeInJsx(node, aliasEnv)}</>`;

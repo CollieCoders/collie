@@ -6,21 +6,49 @@ import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
 import { diffLines } from "diff";
 import pc from "picocolors";
+import prompts from "prompts";
 import { formatSource } from "./formatter";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
 import { check as runCheck } from "./checker";
-import { create as createProject } from "./creator";
+import { create as createProject, formatTemplateList } from "./creator";
+import { hasNextDependency, setupNextJs } from "./nextjs-setup";
+import type { NextDirectoryInfo } from "./nextjs-setup";
+import { loadAndValidateConfig, mergeConfig } from "./config";
+import { convertFile } from "./converter";
+import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
+type Framework = "vite" | "nextjs";
+
+interface InitOptions {
+  framework?: Framework;
+  projectName?: string;
+  typescript?: boolean;
+  packageManager?: PackageManager;
+  noInstall?: boolean;
+}
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
-const CLI_PACKAGE_VERSION = readCliPackageVersion();
-const COLLIE_DEPENDENCIES =
-  CLI_PACKAGE_VERSION === "latest"
-    ? ["@collie-lang/compiler", "@collie-lang/vite"]
-    : [`@collie-lang/compiler@${CLI_PACKAGE_VERSION}`, `@collie-lang/vite@${CLI_PACKAGE_VERSION}`];
+const CLI_PACKAGE_INFO = readCliPackageInfo();
+const CLI_PACKAGE_VERSION = CLI_PACKAGE_INFO.version;
+const CLI_DEPENDENCY_SPECS = CLI_PACKAGE_INFO.dependencies;
+const DEFAULT_DEPENDENCY_RANGE = CLI_PACKAGE_VERSION === "latest" ? "latest" : `^${CLI_PACKAGE_VERSION}`;
+const COLLIE_COMPILER_DEPENDENCY = formatCollieDependency("@collie-lang/compiler");
+const COLLIE_VITE_DEPENDENCY = formatCollieDependency("@collie-lang/vite");
+const COLLIE_DEPENDENCIES = [COLLIE_COMPILER_DEPENDENCY, COLLIE_VITE_DEPENDENCY];
+const COLLIE_NEXT_DEPENDENCY = formatCollieDependency("@collie-lang/next");
+const COLLIE_NEXT_VERSION_RANGE = normalizeDependencyRange(
+  CLI_DEPENDENCY_SPECS["@collie-lang/next"],
+  DEFAULT_DEPENDENCY_RANGE
+);
+const PROMPT_OPTIONS = {
+  onCancel: () => {
+    console.log(pc.yellow("\nCancelled"));
+    process.exit(0);
+  }
+} as const;
 
 async function main() {
   const args = process.argv.slice(2);
@@ -43,6 +71,7 @@ async function main() {
   }
 
   if (cmd === "check") {
+    await loadAndValidateConfig();
     const rest = args.slice(1);
     const patterns = rest.filter((arg) => !arg.startsWith("-"));
     if (patterns.length === 0) {
@@ -97,7 +126,15 @@ async function main() {
       }
     }
 
-    const template = getFlag(flagArgs, "--template") as "vite" | "nextjs" | undefined;
+    const templateListRequested = hasFlag(flagArgs, "--list-templates");
+    if (templateListRequested) {
+      console.log(pc.bold("Available templates:\n"));
+      console.log(formatTemplateList());
+      console.log("\nRun collie create <project-name> --template <template> to scaffold with a specific option.\n");
+      return;
+    }
+
+    const template = getFlag(flagArgs, "--template");
     const typescriptFlag = hasFlag(flagArgs, "--typescript");
     const javascriptFlag = hasFlag(flagArgs, "--javascript");
     if (typescriptFlag && javascriptFlag) {
@@ -117,6 +154,79 @@ async function main() {
     return;
   }
 
+  if (cmd === "convert") {
+    const rest = args.slice(1);
+    const patterns = rest.filter((arg) => !arg.startsWith("-"));
+    if (patterns.length === 0) {
+      throw new Error("No files provided. Usage: collie convert <files...>");
+    }
+    const write = hasFlag(rest, "--write", "-w");
+    const overwrite = hasFlag(rest, "--overwrite");
+    const removeOriginal = hasFlag(rest, "--remove-original");
+    if (removeOriginal && !write) {
+      throw new Error("--remove-original can only be used with --write.");
+    }
+
+    const files = await fg(patterns, {
+      absolute: false,
+      onlyFiles: true,
+      unique: true
+    });
+
+    if (!files.length) {
+      console.log(pc.yellow("No files matched the provided patterns."));
+      return;
+    }
+    files.sort();
+
+    const options = { write, overwrite, removeOriginal };
+    for (const file of files) {
+      try {
+        const result = await convertFile(file, options);
+        if (write) {
+          const target = result.outputPath ?? file.replace(/\.[tj]sx?$/, ".collie");
+          console.log(pc.green(`✔ Converted ${file} → ${target}`));
+        } else {
+          console.log(pc.gray(`// Converted from ${file}\n`));
+          process.stdout.write(result.collie);
+          if (!result.collie.endsWith("\n")) {
+            process.stdout.write("\n");
+          }
+          console.log("");
+        }
+        for (const warning of result.warnings) {
+          console.warn(pc.yellow(`⚠ ${file}: ${warning}`));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(pc.red(`✖ Failed to convert ${file}: ${message}`));
+        process.exitCode = 1;
+      }
+    }
+    return;
+  }
+
+  if (cmd === "doctor") {
+    const rest = args.slice(1);
+    const jsonOutput = hasFlag(rest, "--json");
+    const subsystem = getFlag(rest, "--check");
+    const results = await runDoctor({ cwd: process.cwd() });
+    const filtered = filterDiagnostics(results, subsystem);
+    if (subsystem && filtered.length === 0) {
+      console.error(pc.red(`Unknown subsystem for --check: ${subsystem}`));
+      process.exit(1);
+    }
+    if (jsonOutput) {
+      console.log(JSON.stringify(filtered, null, 2));
+    } else {
+      printDoctorResults(filtered);
+    }
+    if (filtered.some((result) => result.status === "fail")) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (cmd === "watch") {
     const watchArgs = args.slice(1);
     const inputPath = watchArgs[0];
@@ -124,14 +234,27 @@ async function main() {
       throw new Error("No input path provided. Usage: collie watch <path>");
     }
     const flagArgs = watchArgs.slice(1);
-    const options = {
+    const verboseFlag = hasFlag(flagArgs, "--verbose", "-v");
+    const sourcemapFlag = hasFlag(flagArgs, "--sourcemap");
+    const jsxFlag = getFlag(flagArgs, "--jsx");
+    const { config } = await loadAndValidateConfig();
+    const compileConfig = mergeConfig(config, "compile", {
+      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
+      sourcemap: sourcemapFlag ? true : undefined
+    });
+    const watchConfig = mergeConfig(config, "watch", {
       outDir: getFlag(flagArgs, "--outDir"),
-      sourcemap: hasFlag(flagArgs, "--sourcemap"),
+      sourcemap: sourcemapFlag ? true : undefined,
       ext: getFlag(flagArgs, "--ext"),
-      jsxRuntime: parseJsxRuntime(getFlag(flagArgs, "--jsx")),
-      verbose: hasFlag(flagArgs, "--verbose", "-v")
-    };
-    await watchCollie(inputPath, options);
+      verbose: verboseFlag ? true : undefined
+    });
+    await watchCollie(inputPath, {
+      outDir: watchConfig.outDir,
+      sourcemap: watchConfig.sourcemap ?? compileConfig.sourcemap,
+      ext: watchConfig.ext,
+      jsxRuntime: compileConfig.jsxRuntime,
+      verbose: watchConfig.verbose
+    });
     return;
   }
 
@@ -147,14 +270,26 @@ async function main() {
     if (verbose && quiet) {
       throw new Error("Cannot use --quiet and --verbose together.");
     }
-    const options = {
+    const sourcemapFlag = hasFlag(flagArgs, "--sourcemap");
+    const jsxFlag = getFlag(flagArgs, "--jsx");
+    const { config } = await loadAndValidateConfig();
+    const compileConfig = mergeConfig(config, "compile", {
+      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
+      sourcemap: sourcemapFlag ? true : undefined
+    });
+    const buildConfig = mergeConfig(config, "build", {
       outDir: getFlag(flagArgs, "--outDir"),
-      sourcemap: hasFlag(flagArgs, "--sourcemap"),
-      jsxRuntime: parseJsxRuntime(getFlag(flagArgs, "--jsx")),
-      verbose,
-      quiet
-    };
-    const result = await runBuild(inputPath, options);
+      sourcemap: sourcemapFlag ? true : undefined,
+      verbose: verbose ? true : undefined,
+      quiet: quiet ? true : undefined
+    });
+    const result = await runBuild(inputPath, {
+      outDir: buildConfig.outDir,
+      sourcemap: buildConfig.sourcemap ?? compileConfig.sourcemap,
+      jsxRuntime: compileConfig.jsxRuntime,
+      verbose: buildConfig.verbose,
+      quiet: buildConfig.quiet
+    });
     if (result.errors.length > 0) {
       process.exitCode = 1;
     }
@@ -162,9 +297,71 @@ async function main() {
   }
 
   if (cmd === "init") {
+    const rest = args.slice(1);
+    const flagsNeedingValue = new Set(["--project", "--package-manager", "--framework"]);
+    let pendingFlag: string | null = null;
+    let positionalProject: string | undefined;
+    const extraArgs: string[] = [];
+
+    for (const arg of rest) {
+      if (pendingFlag) {
+        pendingFlag = null;
+        continue;
+      }
+      if (arg.startsWith("-")) {
+        if (flagsNeedingValue.has(arg)) {
+          pendingFlag = arg;
+        }
+        continue;
+      }
+      if (!positionalProject) {
+        positionalProject = arg;
+      } else {
+        extraArgs.push(arg);
+      }
+    }
+
+    if (pendingFlag) {
+      throw new Error(`${pendingFlag} flag expects a value.`);
+    }
+    if (extraArgs.length > 0) {
+      throw new Error(`Unexpected argument(s): ${extraArgs.join(", ")}`);
+    }
+
+    const frameworkValue = getFlag(rest, "--framework");
+    const framework =
+      (frameworkValue === "vite" || frameworkValue === "nextjs"
+        ? frameworkValue
+        : undefined) ??
+      (hasFlag(rest, "--nextjs") ? "nextjs" : undefined) ??
+      (hasFlag(rest, "--vite") ? "vite" : undefined);
+
+    const typescriptFlag = hasFlag(rest, "--typescript");
+    const javascriptFlag = hasFlag(rest, "--javascript");
+    if (typescriptFlag && javascriptFlag) {
+      throw new Error("Use only one of --typescript or --javascript.");
+    }
+
+    const packageManagerValue = getFlag(rest, "--package-manager");
+    let packageManager: PackageManager | undefined;
+    if (packageManagerValue) {
+      if (packageManagerValue !== "npm" && packageManagerValue !== "yarn" && packageManagerValue !== "pnpm") {
+        throw new Error('Invalid --package-manager value. Use "npm", "yarn", or "pnpm".');
+      }
+      packageManager = packageManagerValue;
+    }
+
+    const projectName = getFlag(rest, "--project") ?? positionalProject;
+    const initOptions: InitOptions = {
+      framework: framework as Framework | undefined,
+      projectName,
+      typescript: typescriptFlag ? true : javascriptFlag ? false : undefined,
+      packageManager,
+      noInstall: hasFlag(rest, "--no-install")
+    };
+
     try {
-      await runInit();
-      console.log(pc.green("✔ Collie is ready! Add a .collie file and import it in your Vite app."));
+      await runInit(initOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(pc.red(`[collie] ${message}`));
@@ -181,16 +378,96 @@ function printHelp() {
   console.log(`${pc.bold("collie")}
 
 Commands:
-  collie init     Initialize Collie in a Vite+React project
+  collie init     Initialize Collie in Vite or Next.js projects (--nextjs)
   collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
   collie check    Validate Collie templates (collie check \"src/**/*.collie\")
+  collie doctor   Diagnose setup issues (collie doctor --json)
+  collie convert  Convert JSX/TSX to Collie templates (collie convert src/**/*.tsx --write)
   collie watch    Watch and compile templates (collie watch src --outDir dist)
   collie build    Compile templates once (collie build src --outDir dist)
-  collie create   Scaffold a new Collie project (collie create my-app)
+  collie create   Scaffold a new Collie project (use --list-templates to view options)
 `);
 }
 
-async function runInit(): Promise<void> {
+async function runInit(options: InitOptions = {}): Promise<void> {
+  const projectRoot = process.cwd();
+  const packageJson = await readProjectPackage(projectRoot);
+  const detectedFramework = packageJson ? detectFrameworkFromPackage(packageJson) : null;
+
+  let framework = options.framework ?? detectedFramework;
+  if (!framework) {
+    framework = await promptFramework();
+  }
+
+  if (framework === "nextjs") {
+    if (!packageJson) {
+      throw new Error("package.json not found. Run this inside a Next.js project.");
+    }
+    if (!hasNextDependency(packageJson)) {
+      throw new Error("Not a Next.js project. 'next' not found in package.json");
+    }
+
+    console.log(pc.cyan("Detected Next.js project\n"));
+
+    if (options.noInstall) {
+      console.log(
+        pc.yellow("Skipping dependency installation (--no-install). Install @collie-lang/next manually.")
+      );
+    } else {
+      const packageManager = detectPackageManager(projectRoot);
+      console.log(pc.cyan(`Installing @collie-lang/next with ${packageManager}...`));
+      await installDevDependencies(packageManager, projectRoot, [COLLIE_NEXT_DEPENDENCY]);
+      console.log(pc.green("✔ Installed @collie-lang/next"));
+    }
+
+    const nextDirectory = await setupNextJs(projectRoot, {
+      skipDetectionLog: true,
+      collieNextVersion: COLLIE_NEXT_VERSION_RANGE
+    });
+    printNextJsInstructions(nextDirectory);
+    return;
+  }
+
+  await initViteProject();
+}
+
+async function readProjectPackage(projectRoot: string): Promise<Record<string, any> | null> {
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    return null;
+  }
+  const raw = await fs.readFile(packageJsonPath, "utf8");
+  return JSON.parse(raw);
+}
+
+function detectFrameworkFromPackage(pkg: Record<string, any>): Framework | null {
+  if (hasNextDependency(pkg)) {
+    return "nextjs";
+  }
+  if (getViteDependencyInfo(pkg)) {
+    return "vite";
+  }
+  return null;
+}
+
+async function promptFramework(): Promise<Framework> {
+  const response = await prompts(
+    {
+      type: "select",
+      name: "framework",
+      message: "Which framework would you like to set up?",
+      choices: [
+        { title: "Vite (existing project)", value: "vite" },
+        { title: "Next.js (existing project)", value: "nextjs" }
+      ],
+      initial: 0
+    },
+    PROMPT_OPTIONS
+  );
+  return response.framework === "nextjs" ? "nextjs" : "vite";
+}
+
+async function initViteProject(): Promise<void> {
   const projectRoot = process.cwd();
   const packageJsonPath = path.join(projectRoot, "package.json");
   if (!existsSync(packageJsonPath)) {
@@ -221,6 +498,8 @@ async function runInit(): Promise<void> {
 
   maybeWarnAboutViteVersion(viteInfo);
   printNextSteps(pkgManager, configPath);
+
+  console.log(pc.green("✔ Collie is ready! Add a .collie file and import it in your Vite app."));
 }
 
 function detectPackageManager(root: string): PackageManager {
@@ -372,16 +651,36 @@ function computeInsertPos(content: string, match: RegExpMatchArray): number {
   return pos;
 }
 
-function readCliPackageVersion(): string {
+function readCliPackageInfo(): { version: string; dependencies: Record<string, string> } {
   try {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const pkgPath = path.resolve(dir, "..", "package.json");
     const raw = readFileSync(pkgPath, "utf8");
     const pkg = JSON.parse(raw);
-    return typeof pkg.version === "string" ? pkg.version : "latest";
+    const version = typeof pkg.version === "string" ? pkg.version : "latest";
+    const dependencies =
+      pkg && typeof pkg === "object" && pkg.dependencies && typeof pkg.dependencies === "object"
+        ? pkg.dependencies
+        : {};
+    return { version, dependencies };
   } catch {
-    return "latest";
+    return { version: "latest", dependencies: {} };
   }
+}
+
+function formatCollieDependency(packageName: string): string {
+  return CLI_PACKAGE_VERSION === "latest" ? packageName : `${packageName}@${CLI_PACKAGE_VERSION}`;
+}
+
+function normalizeDependencyRange(spec: string | undefined, fallback: string): string {
+  if (!spec) {
+    return fallback;
+  }
+  if (spec.startsWith("workspace:")) {
+    const trimmed = spec.replace(/^workspace:/, "");
+    return trimmed && trimmed !== "*" ? trimmed : fallback;
+  }
+  return spec;
 }
 
 function getViteDependencyInfo(pkg: Record<string, any>): { range: string; major: number | null } | null {
@@ -414,6 +713,25 @@ function printNextSteps(pkgManager: PackageManager, configPath: string): void {
   console.log(`  - Need to adjust plugins later? Edit ${path.basename(configPath)}.`);
 }
 
+function printNextJsInstructions(info?: NextDirectoryInfo): void {
+  const detected = info?.detected ?? false;
+  const routerLabel = detected ? (info?.routerType === "app" ? "App Router" : "Pages Router") : "Next.js";
+  const baseDirDisplay = (detected ? info?.baseDir ?? "app" : "app").replace(/\\/g, "/");
+  const entryFile = info?.routerType === "pages" ? "index.tsx" : "page.tsx";
+  const entryDisplay = `${baseDirDisplay}/${entryFile}`.replace(/\/+/g, "/");
+
+  console.log(pc.green("\n🎉 Collie is ready for Next.js!\n"));
+  console.log(pc.cyan(`Next steps (${routerLabel}):`));
+  console.log(`  - Import .collie components inside ${entryDisplay}:`);
+  console.log(pc.gray(`    import Welcome from "./components/Welcome.collie"`));
+  console.log("");
+  console.log("  - Collie components render as Server Components by default.");
+  console.log("  - Add @client at the top of a .collie file to opt into a Client Component.");
+  console.log("");
+  console.log("  - Run your Next.js dev server:");
+  console.log(pc.gray("    npm run dev"));
+}
+
 function formatDevCommand(pkgManager: PackageManager): string {
   if (pkgManager === "pnpm") return "pnpm dev";
   if (pkgManager === "yarn") return "yarn dev";
@@ -435,7 +753,7 @@ interface FormatFlags {
   write: boolean;
   check: boolean;
   diff: boolean;
-  indent: number;
+  indent?: number;
   config?: string;
 }
 
@@ -444,6 +762,8 @@ async function runFormat(args: string[]): Promise<void> {
   if (patterns.length === 0) {
     throw new Error("No file patterns provided. Usage: collie format <files...>");
   }
+  const { config } = await loadAndValidateConfig(flags.config ? { configPath: flags.config } : undefined);
+  const formatConfig = mergeConfig(config, "format", { indent: flags.indent });
 
   const cwd = process.cwd();
   const files = await fg(patterns, { cwd, onlyFiles: true, unique: true });
@@ -470,7 +790,7 @@ async function runFormat(args: string[]): Promise<void> {
 
     let result;
     try {
-      result = formatSource(contents, { indent: flags.indent });
+      result = formatSource(contents, { indent: formatConfig.indent });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(pc.red(`[collie] Failed to format ${file}: ${message}`));
@@ -534,7 +854,7 @@ async function runFormat(args: string[]): Promise<void> {
 }
 
 function parseFormatArgs(args: string[]): { patterns: string[]; flags: FormatFlags } {
-  const flags: FormatFlags = { write: false, check: false, diff: false, indent: 2 };
+  const flags: FormatFlags = { write: false, check: false, diff: false };
   const patterns: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -635,7 +955,7 @@ function hasFlag(args: string[], ...names: string[]): boolean {
 
 function parseJsxRuntime(value?: string): "automatic" | "classic" {
   if (!value) {
-    return "automatic";
+    throw new Error("--jsx flag expects a value.");
   }
   if (value === "automatic" || value === "classic") {
     return value;

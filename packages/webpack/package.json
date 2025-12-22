@@ -1,0 +1,35 @@
+{
+  "name": "@collie-lang/webpack",
+  "version": "0.1.0",
+  "description": "Webpack loader for Collie template language",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "collie",
+    "webpack",
+    "loader",
+    "template"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@collie-lang/compiler": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.6.0",
+    "webpack": "^5.0.0"
+  },
+  "peerDependencies": {
+    "webpack": "^5.0.0"
+  }
+}

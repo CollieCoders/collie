@@ -1,0 +1,10 @@
+export default function Navigation(props)
+  nav.bg-gray-800.text-white.p-4
+    div.container.mx-auto.flex.justify-between.items-center
+      a.text-xl.font-bold(href="/") Collie + Next.js
+      
+      ul.flex.space-x-6
+        for item in props.links
+          li
+            a.hover:text-blue-400.transition-colors(href={item.href})
+              {item.label}

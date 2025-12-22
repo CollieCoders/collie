@@ -78,24 +78,44 @@ This repo uses **pnpm workspaces** and contains all official Collie tooling:
 
 ```
 packages/
-  compiler   – The Collie parser, AST, printer, and JSX generator
+  compiler   – Collie parser, AST, printer, and JSX generator
   vite       – Vite plugin for `.collie` → JSX transforms
-  cli        – Collie CLI (build, watch, validate)
+  webpack    – Webpack loader used by other tooling (e.g. Next.js)
+  next       – Next.js plugin that wires the loader into the framework
+  cli        – Collie CLI (build, watch, validate, scaffold projects)
 ```
 
 Additional packages may be added in the future as Collie grows (language server, testing helpers, playground, etc.).
+
+## ✅ Supported Frameworks
+
+- **Vite** via `@collie-lang/vite`
+- **Next.js** via `@collie-lang/next`
+- Webpack-based environments can also consume `.collie` files directly through `@collie-lang/webpack`.
 
 ---
 
 ## 🔧 Installation
 
-### 1. Add Collie to your Vite + React project
+### Quick Start (CLI)
 
 ```bash
-pnpm add @collie-lang/vite
+# Existing Vite project
+pnpm dlx @collie-lang/cli init --vite
+
+# Scaffold a brand new Next.js project with Collie support
+pnpm dlx @collie-lang/cli init --nextjs my-collie-next-app
 ```
 
-### 2. Enable the Vite plugin
+### Manual Setup — Vite
+
+1. Install the Vite plugin:
+
+```bash
+pnpm add -D @collie-lang/vite
+```
+
+2. Enable it in `vite.config.ts`:
 
 ```ts
 // vite.config.ts
@@ -105,13 +125,13 @@ import collie from '@collie-lang/vite'
 
 export default defineConfig({
   plugins: [
-    react(),
-    collie()
+    collie(),
+    react()
   ]
 })
 ```
 
-### 3. Add `.collie` files
+3. Import `.collie` files anywhere in your app.
 
 ```tsx
 import Welcome from './components/Welcome.collie'
@@ -125,7 +145,37 @@ export default function App() {
 }
 ```
 
-Every `.collie` file is compiled on-the-fly into JSX or TSX.
+### Manual Setup — Next.js
+
+1. Install the Next.js plugin (and the underlying loader):
+
+```bash
+pnpm add -D @collie-lang/next @collie-lang/webpack
+```
+
+2. Wrap your Next.js config:
+
+```js
+// next.config.js
+const { withCollie } = require('@collie-lang/next');
+
+module.exports = withCollie({
+  reactStrictMode: true,
+});
+```
+
+3. Add `collie.d.ts` so TypeScript understands `.collie` imports:
+
+```ts
+// src/collie.d.ts
+declare module '*.collie' {
+  import type { ComponentType } from 'react';
+  const Component: ComponentType<Record<string, unknown>>;
+  export default Component;
+}
+```
+
+4. Import `.collie` files in either the App Router or Pages Router.
 
 ---
 
@@ -164,6 +214,15 @@ collie watch        Recompile on file changes
 ```
 
 TODO: Add links once documentation is live (`collie-lang.org/cli`).
+
+---
+
+## 🧪 Examples
+
+- [`examples/vite-react-ts`](examples/vite-react-ts) – starter Vite + React + TS project
+- [`examples/nextjs-app-router`](examples/nextjs-app-router) – fully configured Next.js 14 App Router project that consumes Collie components
+
+Additional guides live under [`docs/`](docs), including a [framework migration guide](docs/migration.md).
 
 ---
 

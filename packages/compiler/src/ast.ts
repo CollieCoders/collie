@@ -15,6 +15,7 @@ export interface RootNode {
   children: Node[];
   props?: PropsDecl;
   classAliases?: ClassAliasesDecl;
+  clientComponent?: boolean;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode | ForNode | ComponentNode | JSXPassthroughNode;
@@ -31,6 +32,7 @@ export interface ElementNode {
   classSpans?: SourceSpan[];
   attributes: Attribute[];
   children: Node[];
+  guard?: string;
 }
 
 export interface ComponentNode {
@@ -38,6 +40,8 @@ export interface ComponentNode {
   name: string;
   attributes: Attribute[];
   children: Node[];
+  slots?: SlotBlock[];
+  guard?: string;
 }
 
 export interface ForNode {
@@ -92,4 +96,10 @@ export interface PropsField {
   name: string;
   optional: boolean;
   typeText: string;
+}
+
+export interface SlotBlock {
+  type: "Slot";
+  name: string;
+  children: Node[];
 }

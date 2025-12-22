@@ -1802,6 +1802,8 @@ if (cmd === "create") {
 
 ## Feature #6: `collie init --nextjs` - Next.js Support
 
+**Status**: ✅ Complete
+
 **Priority**: 🟠 High
 
 ### Value Proposition
@@ -2227,6 +2229,8 @@ function printNextJsInstructions(): void {
 ---
 
 ## Feature #7: `.collierc` - Project Configuration File
+
+**Status**: ✅ Complete
 
 **Priority**: 🟡 Medium
 
@@ -2840,6 +2844,8 @@ if (cmd === "convert") {
 ---
 
 ## Feature #9: `collie doctor` - Environment Diagnostics
+
+**Status**: ✅ Complete
 
 **Priority**: 🟡 Medium
 
