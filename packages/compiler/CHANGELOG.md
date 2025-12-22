@@ -1,5 +1,11 @@
 # @collie-lang/compiler
 
+## 4.0.0
+
+### Major Changes
+
+- b964e53: Deploying fixes
+
 ## 3.0.0
 
 ### Major Changes

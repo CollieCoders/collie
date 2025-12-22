@@ -1,5 +1,13 @@
 # @collie-lang/vite
 
+## 1.0.3
+
+### Patch Changes
+
+- b964e53: Deploying fixes
+- Updated dependencies [b964e53]
+  - @collie-lang/compiler@4.0.0
+
 ## 1.0.2
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @collie-lang/webpack
 
+## 4.0.0
+
+### Major Changes
+
+- b964e53: Deploying fixes
+
+### Patch Changes
+
+- Updated dependencies [b964e53]
+  - @collie-lang/compiler@4.0.0
+
 ## 2.0.0
 
 ### Major Changes

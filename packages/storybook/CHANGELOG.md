@@ -1,5 +1,14 @@
 # @collie-lang/storybook
 
+## 1.0.3
+
+### Patch Changes
+
+- b964e53: Deploying fixes
+- Updated dependencies [b964e53]
+  - @collie-lang/webpack@4.0.0
+  - @collie-lang/vite@1.0.3
+
 ## 1.0.2
 
 ### Patch Changes

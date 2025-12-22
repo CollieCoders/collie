@@ -1,5 +1,14 @@
 # @collie-lang/cli
 
+## 2.0.1
+
+### Patch Changes
+
+- b964e53: Deploying fixes
+- Updated dependencies [b964e53]
+  - @collie-lang/compiler@4.0.0
+  - @collie-lang/next@1.0.3
+
 ## 2.0.0
 
 ### Major Changes
