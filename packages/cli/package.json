@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/cli",
-  "version": "0.0.1",
+  "version": "2.0.1",
   "description": "Collie CLI (init a Vite project with Collie).",
   "license": "MIT",
   "type": "module",
@@ -17,8 +17,12 @@
   "bin": {
     "collie": "./dist/index.js"
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

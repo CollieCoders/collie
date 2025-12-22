@@ -1,5 +1,5 @@
 import { generateModule } from "./codegen";
-import { generateHtmlModule } from "./html-codegen";
+import { generateHtml } from "./html-codegen";
 import { parse } from "./parser";
 import type { ParseResult } from "./parser";
 import type { Diagnostic } from "./diagnostics";
@@ -110,11 +110,10 @@ export function compileToHtml(
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename);
   const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
-  const componentName = options.componentNameHint ?? "CollieTemplate";
 
-  let code = createStubHtml(componentName);
+  let code = createStubHtml();
   if (!hasErrors(diagnostics)) {
-    code = generateHtmlModule(document.root, { componentName });
+    code = generateHtml(document.root);
   }
 
   return { code, diagnostics, map: undefined };
@@ -177,8 +176,8 @@ function createStubComponent(name: string, flavor: "jsx" | "tsx"): string {
   return [`export default function ${name}(props) {`, "  return null;", "}"].join("\n");
 }
 
-function createStubHtml(name: string): string {
-  return [`export default function ${name}(props = {}) {`, '  return "";', "}"].join("\n");
+function createStubHtml(): string {
+  return "";
 }
 
 function attachFilename(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {

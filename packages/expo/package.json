@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/expo",
-  "version": "0.0.1",
+  "version": "1.0.3",
   "description": "Expo / Metro adapter for Collie templates.",
   "license": "MIT",
   "type": "module",
@@ -19,8 +19,12 @@
       "require": "./dist/metro-transformer.cjs"
     }
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
