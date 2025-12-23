@@ -1,6 +1,6 @@
 const PLACEHOLDER_SUFFIX = "-collie";
 const PLACEHOLDER_SELECTOR = "[id$='-collie']";
-const PARTIAL_BASE_PATH = "/collie/generated";
+const PARTIAL_BASE_PATH = "/collie/dist";
 
 type PlaceholderEntry = {
   partialId: string;
@@ -92,8 +92,14 @@ async function loadAndInjectPartial(
   if (!url) return;
 
   try {
-    const html = await fetchPartialHtml(url);
-    element.innerHTML = html;
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) {
+      console.warn(
+        `[CollieHtmlRuntime] Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`
+      );
+      return;
+    }
+    element.innerHTML = await response.text();
   } catch (error) {
     const details =
       error instanceof Error ? error.message : JSON.stringify(error);
@@ -107,14 +113,6 @@ function buildPartialUrl(partialId: string): string | null {
   const normalized = partialId.trim();
   if (!normalized) return null;
   return `${PARTIAL_BASE_PATH}/${encodeURIComponent(normalized)}.html`;
-}
-
-async function fetchPartialHtml(url: string): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} (${response.statusText})`);
-  }
-  return response.text();
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
