@@ -15,7 +15,6 @@ import { check as runCheck } from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import type { NextDirectoryInfo } from "./nextjs-setup";
-import { loadAndValidateConfig, mergeConfig } from "./config";
 import { convertFile } from "./converter";
 import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
 
@@ -71,7 +70,6 @@ async function main() {
   }
 
   if (cmd === "check") {
-    await loadAndValidateConfig();
     const rest = args.slice(1);
     const patterns = rest.filter((arg) => !arg.startsWith("-"));
     if (patterns.length === 0) {
@@ -237,23 +235,12 @@ async function main() {
     const verboseFlag = hasFlag(flagArgs, "--verbose", "-v");
     const sourcemapFlag = hasFlag(flagArgs, "--sourcemap");
     const jsxFlag = getFlag(flagArgs, "--jsx");
-    const { config } = await loadAndValidateConfig();
-    const compileConfig = mergeConfig(config, "compile", {
-      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
-      sourcemap: sourcemapFlag ? true : undefined
-    });
-    const watchConfig = mergeConfig(config, "watch", {
+    await watchCollie(inputPath, {
       outDir: getFlag(flagArgs, "--outDir"),
       sourcemap: sourcemapFlag ? true : undefined,
       ext: getFlag(flagArgs, "--ext"),
+      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
       verbose: verboseFlag ? true : undefined
-    });
-    await watchCollie(inputPath, {
-      outDir: watchConfig.outDir,
-      sourcemap: watchConfig.sourcemap ?? compileConfig.sourcemap,
-      ext: watchConfig.ext,
-      jsxRuntime: compileConfig.jsxRuntime,
-      verbose: watchConfig.verbose
     });
     return;
   }
@@ -272,23 +259,12 @@ async function main() {
     }
     const sourcemapFlag = hasFlag(flagArgs, "--sourcemap");
     const jsxFlag = getFlag(flagArgs, "--jsx");
-    const { config } = await loadAndValidateConfig();
-    const compileConfig = mergeConfig(config, "compile", {
-      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
-      sourcemap: sourcemapFlag ? true : undefined
-    });
-    const buildConfig = mergeConfig(config, "build", {
+    const result = await runBuild(inputPath, {
       outDir: getFlag(flagArgs, "--outDir"),
       sourcemap: sourcemapFlag ? true : undefined,
+      jsxRuntime: jsxFlag ? parseJsxRuntime(jsxFlag) : undefined,
       verbose: verbose ? true : undefined,
       quiet: quiet ? true : undefined
-    });
-    const result = await runBuild(inputPath, {
-      outDir: buildConfig.outDir,
-      sourcemap: buildConfig.sourcemap ?? compileConfig.sourcemap,
-      jsxRuntime: compileConfig.jsxRuntime,
-      verbose: buildConfig.verbose,
-      quiet: buildConfig.quiet
     });
     if (result.errors.length > 0) {
       process.exitCode = 1;
@@ -754,7 +730,6 @@ interface FormatFlags {
   check: boolean;
   diff: boolean;
   indent?: number;
-  config?: string;
 }
 
 async function runFormat(args: string[]): Promise<void> {
@@ -762,8 +737,7 @@ async function runFormat(args: string[]): Promise<void> {
   if (patterns.length === 0) {
     throw new Error("No file patterns provided. Usage: collie format <files...>");
   }
-  const { config } = await loadAndValidateConfig(flags.config ? { configPath: flags.config } : undefined);
-  const formatConfig = mergeConfig(config, "format", { indent: flags.indent });
+  const indent = flags.indent ?? 2;
 
   const cwd = process.cwd();
   const files = await fg(patterns, { cwd, onlyFiles: true, unique: true });
@@ -790,7 +764,7 @@ async function runFormat(args: string[]): Promise<void> {
 
     let result;
     try {
-      result = formatSource(contents, { indent: formatConfig.indent });
+      result = formatSource(contents, { indent });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(pc.red(`[collie] Failed to format ${file}: ${message}`));
@@ -881,15 +855,6 @@ function parseFormatArgs(args: string[]): { patterns: string[]; flags: FormatFla
         throw new Error("Indent width must be a positive integer.");
       }
       flags.indent = Math.floor(parsed);
-      i++;
-      continue;
-    }
-    if (arg === "--config") {
-      const value = args[i + 1];
-      if (!value) {
-        throw new Error("--config flag expects a path.");
-      }
-      flags.config = value;
       i++;
       continue;
     }
