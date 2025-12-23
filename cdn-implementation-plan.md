@@ -298,7 +298,7 @@ window.CollieHtmlRuntime = {
 
 # 📦 STAGE 2 — Implement Versioned Build Output (`build-versioned.js`)
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Copy the compiled files from `dist/temp/` into versioned directories.
 
@@ -329,6 +329,10 @@ dist/
 4. After copying, delete `dist/temp`.
 
 ### Implementation Summary (Stage 2)
+
+* Added the versioned build orchestrator at `packages/html-runtime/scripts/build-versioned.js`, which reads the runtime package version, emits files into both `dist/v{major}` and `dist/v{version}` directories, and cleans up the temporary build output.
+* The script currently copies `collie-html-runtime.js` and `collie-convert.js`, warning if either asset is missing while still completing the overall build.
+* TODO: Future stages will refine build commands and CDN publishing; no tests were added or modified per plan.
 
 ---
 
