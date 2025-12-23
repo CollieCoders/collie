@@ -16,6 +16,7 @@ import type {
   TextNode
 } from "./ast";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
+import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
 
 export interface ParseResult {
   root: RootNode;
@@ -72,6 +73,7 @@ export function parse(source: string): ParseResult {
   let propsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
+  let sawNonIdTopLevelDirective = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -157,6 +159,104 @@ export function parse(source: string): ParseResult {
       conditionalChains.delete(level);
     }
 
+    const idMatch = trimmed.match(/^#id\b(.*)$/);
+    if (idMatch) {
+      const column = indent + 1;
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "#id must appear at the top level before any other directives.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (root.rawId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE703",
+          "#id can only appear once per file.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (sawTopLevelTemplateNode || sawNonIdTopLevelDirective) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "#id must appear before props, classes, @client, or markup.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const remainderRaw = idMatch[1] ?? "";
+      if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "Invalid #id syntax. Use '#id value', '#id = value', or '#id: value'.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      let valuePart = remainderRaw.trim();
+      if (valuePart.startsWith("=") || valuePart.startsWith(":")) {
+        valuePart = valuePart.slice(1).trim();
+      }
+      if (!valuePart) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "#id must specify an identifier value.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (hasWhitespace(valuePart)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "#id value cannot contain whitespace.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const normalizedId = normalizeIdentifierValue(valuePart);
+      if (!normalizedId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "#id value must include characters other than the '-collie' suffix.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      root.rawId = valuePart;
+      root.id = normalizedId;
+      continue;
+    }
+
     if (trimmed === "classes") {
       if (level !== 0) {
         pushDiag(
@@ -183,6 +283,7 @@ export function parse(source: string): ParseResult {
           root.classAliases = { aliases: [] };
         }
         classesBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -211,6 +312,7 @@ export function parse(source: string): ParseResult {
       } else {
         root.props = { fields: [] };
         propsBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -248,6 +350,7 @@ export function parse(source: string): ParseResult {
         );
       } else {
         root.clientComponent = true;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -314,6 +417,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, forNode);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       stack.push({ node: forNode, level });
       continue;
@@ -337,6 +441,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, chain);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
@@ -581,6 +686,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
         continue;
       }
@@ -590,6 +696,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -601,6 +708,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -612,6 +720,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, exprNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -642,6 +751,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -650,6 +760,7 @@ export function parse(source: string): ParseResult {
     addChildToParent(parent, element);
     if (parent === root) {
       sawTopLevelTemplateNode = true;
+      sawNonIdTopLevelDirective = true;
     }
     stack.push({ node: element, level });
   }
