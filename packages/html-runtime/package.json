@@ -1,0 +1,21 @@
+{
+  "name": "@collie-lang/html-runtime",
+  "version": "1.0.0",
+  "private": false,
+  "main": "dist/v1/collie-html-runtime.js",
+  "module": "dist/v1/collie-html-runtime.js",
+  "types": "",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsup src/collie-html-runtime.ts --format esm --out-dir dist/temp",
+    "build:versioned": "node scripts/build-versioned.js",
+    "prepare-cdn": "pnpm build && pnpm build:versioned"
+  },
+  "devDependencies": {
+    "tsup": "latest",
+    "rimraf": "latest"
+  }
+}

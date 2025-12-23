@@ -153,7 +153,7 @@ pnpm prepare:cdn -w
 
 # 📦 STAGE 0 — Create `packages/html-runtime` Package Scaffold
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Create an empty package ready to accept runtime code.
 
@@ -227,7 +227,10 @@ export function convertDomToCollie() {
 
 ### Implementation Summary (Stage 0)
 
-*Add after Codex executes.*
+* Added `packages/html-runtime` scaffold with package.json, src/, scripts/, dist/, and a package-specific `.gitignore`.
+* Created placeholder stubs for `src/collie-html-runtime.ts`, `src/collie-convert.ts`, and `scripts/build-versioned.js`.
+* Confirmed pnpm workspace already includes `packages/*`, so the new package participates in root scripts automatically; no root `package.json` changes needed yet.
+* TODO: Implement runtime logic (Stage 1) and the versioned build script (Stage 2); tests remain untouched per instructions.
 
 ---
 
@@ -481,4 +484,3 @@ Codex should create stubs only; do not implement actual logic:
 * Collie-to-DOM dev preview helpers
 
 ### Implementation Summary (Stage 7)
-
