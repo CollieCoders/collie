@@ -81,3 +81,19 @@ export interface CollieEditorOptions {
     underlineCollieGeneratedRegions?: "off" | "light" | "bold";
   };
 }
+
+export interface NormalizedCollieConfig extends CollieConfig {
+  projects: NormalizedCollieProjectConfig[];
+}
+
+export interface NormalizedCollieProjectConfig extends CollieProjectConfig {
+  name: string;
+  root: string;
+  input: string[];
+  output: {
+    dir?: string;
+    format?: "jsx" | "tsx";
+  };
+  html?: HtmlProjectOptions;
+  react?: ReactProjectOptions;
+}

@@ -577,7 +577,7 @@ export default defineConfig({
 
 ## Stage 4 – Config Normalization & Helper Utilities
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Take loaded config and normalize it into a predictable internal representation that other Collie packages (e.g. compiler, future CLI, bundler adapters) can rely on.
 
@@ -679,7 +679,10 @@ export default defineConfig({
 
 ### Implementation Summary (Stage 4)
 
-*Add after completion of Stage 4.*
+- Added `NormalizedCollieConfig` / `NormalizedCollieProjectConfig` types so downstream packages can rely on stable fields (`packages/config/src/types.ts`).
+- Implemented `normalizeConfig` in `packages/config/src/normalize.ts`, ensuring project names, roots, inputs, and outputs are defaulted/normalized relative to `cwd`.
+- Re-exported the helper and introduced `loadAndNormalizeConfig` so callers can opt into normalized configs in one call (`packages/config/src/index.ts`).
+- Running `./node_modules/.bin/tsc -p packages/config/tsconfig.json --noEmit` still exits with `Signal(6)` under this environment; please re-run type checks locally when possible.
 
 ---
 

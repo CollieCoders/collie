@@ -3,9 +3,15 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-import type { CollieConfig, CollieProjectConfig } from "./types";
+import type {
+  CollieConfig,
+  CollieProjectConfig,
+  NormalizedCollieConfig
+} from "./types";
+import { normalizeConfig } from "./normalize";
 
 export * from "./types";
+export * from "./normalize";
 
 const DEFAULT_CONFIG_FILES = [
   "collie.config.ts",
@@ -50,6 +56,16 @@ export async function loadConfig(
 
   const rawConfig = await loadConfigFile(resolvedPath, ext);
   return validateBasicConfig(rawConfig, resolvedPath);
+}
+
+export async function loadAndNormalizeConfig(
+  options: LoadConfigOptions = {}
+): Promise<NormalizedCollieConfig | null> {
+  const config = await loadConfig(options);
+  if (!config) {
+    return null;
+  }
+  return normalizeConfig(config, { cwd: options.cwd });
 }
 
 async function resolveConfigPath(
