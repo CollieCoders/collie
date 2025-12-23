@@ -386,7 +386,7 @@ The new config system should:
 
 ## Stage 2 – Implement Basic Config Loading (JS/JSON, No TS Yet)
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Implement a `loadConfig` function in `@collie-lang/config` that can load **JavaScript and JSON** configs from disk:
 
@@ -486,7 +486,10 @@ TS support (`collie.config.ts`) will be added in **Stage 3**.
 
 ### Implementation Summary (Stage 2)
 
-*Add after completion of Stage 2.*
+- Added the `LoadConfigOptions` interface plus a `loadConfig` implementation in `@collie-lang/config` that resolves configs in Stage 2 order (`.js`, `.mjs`, `.cjs`, `.json`) or honors an explicit path.
+- Implemented format-specific loaders (dynamic `import()` for JS/MJS, `createRequire` for CJS, and JSON parsing) with a guard that throws when a `.ts` config is requested before Stage 3.
+- Introduced basic runtime validation to ensure each config exports an object with a `projects` array and that every project defines both `type` and `input` (string or string[]).
+- Tried to type-check the package via `./node_modules/.bin/tsc -p packages/config/tsconfig.json --noEmit`, but the command exited with `Signal(6)` in this environment; please run TypeScript/tsup builds locally to double-check.
 
 ---
 
