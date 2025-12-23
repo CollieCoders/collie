@@ -736,7 +736,7 @@ export default defineConfig({
 
 ## Stage 6 – Populate Example Config Files
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Fill in the example config files in `docs/examples/config` with **complete, comprehensive, valid** config structures that demonstrate **all available fields/options**, generously filled in.
 
@@ -995,8 +995,6 @@ Target files (already created but currently blank):
 
 ### Implementation Summary (Stage 6)
 
-*Add after completion of Stage 6, confirming that:*
-
-* All three example files are populated.
-* They are consistent with the current config types.
-* Any deviations from the examples in this plan are intentional and documented.
+- Populated `docs/examples/config/collie.config.example.ts` (and `.js`) with full configs that exercise every field in our current schema, including compiler/editor/feature sections plus rich HTML + React project examples with placeholder values and helper comments.
+- Added a JSON variant mirroring the static portions (omitting the function-based HTML transform).
+- These examples provide a complete reference for Stage 1–4 types and highlight how mixed HTML + React projects can be configured with consistent placeholders and runtime options.
