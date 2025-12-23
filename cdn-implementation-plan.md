@@ -236,7 +236,7 @@ export function convertDomToCollie() {
 
 # 📦 STAGE 1 — Implement Runtime Injection Logic
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Implement browser injection logic into `collie-html-runtime.ts`.
 
@@ -289,6 +289,10 @@ window.CollieHtmlRuntime = {
 * Keep file < ~3KB unminified.
 
 ### Implementation Summary (Stage 1)
+
+* Implemented DOM scanning, fetching, and injection logic with configurable selectors plus base path handling (`packages/html-runtime/src/collie-html-runtime.ts`).
+* Added runtime API on `window.CollieHtmlRuntime` with `refresh()` and `loadPartialById()` along with automatic initialization once the DOM is ready.
+* Included basic error handling (console warnings) and helper utilities for selector construction/escaping; no tests were added per instructions.
 
 ---
 
