@@ -56,7 +56,6 @@ collie format src/**/*.collie --diff
 - `--check`, `-c`: Exit with code 1 if files aren't formatted (no writes)
 - `--diff`, `-d`: Show colorized diff of changes
 - `--indent <spaces>`: Indentation width (default: 2)
-- `--config <path>`: Path to `.collierc` config file (if Feature #7 implemented)
 
 ### Use Cases
 
@@ -2228,240 +2227,28 @@ function printNextJsInstructions(): void {
 
 ---
 
-## Feature #7: `.collierc` - Project Configuration File
+## Feature #7: Collie Config System Reset
 
-**Status**: ✅ Complete
+**Status**: 🚧 Rebooting
 
 **Priority**: 🟡 Medium
 
-### Value Proposition
+### Current Status
 
-Provides a professional, standardized way to configure Collie behavior per-project. Enables teams to enforce consistent formatting rules, compiler options, and CLI defaults across all developers. Improves maintainability and reduces command-line verbosity.
+- Legacy `.collierc` / `collie.config.*` loader specs have been removed from the repo.
+- The CLI no longer advertises a `--config` flag or automatic config discovery.
+- No config loader modules exist yet; Stage 0 intentionally leaves a clean slate.
 
-### Command Signature
+### Next Steps
 
-Configuration file (`.collierc`, `.collierc.json`, or `collie.config.js`):
+1. Follow the staged rollout described in [`collie-config-implementation-plan.md`](collie-config-implementation-plan.md).
+2. Stage 1 adds the new `@collie-lang/config` package with typed helpers.
+3. Later stages will add disk loading, normalization, and CLI integrations.
 
-```json
-{
-  "format": {
-    "indent": 2,
-    "sortAttributes": true,
-    "trailingComma": false
-  },
-  "compile": {
-    "jsxRuntime": "automatic",
-    "sourcemap": true
-  },
-  "watch": {
-    "outDir": "dist",
-    "verbose": false
-  }
-}
-```
+### Notes
 
-**Supported Config Files** (checked in order):
-1. `.collierc` (JSON)
-2. `.collierc.json` (JSON)
-3. `collie.config.js` (CommonJS)
-4. `collie.config.mjs` (ES Module)
-
-### Use Cases
-
-1. **Team standardization**: Enforce formatting rules across entire team
-2. **Monorepo configuration**: Different settings per package
-3. **Framework defaults**: Next.js vs Vite projects have different needs
-4. **CI/CD optimization**: Configure once, run anywhere
-5. **Reduce CLI verbosity**: Set common options in config vs flags
-
-### Implementation Requirements
-
-**Files to Create/Modify**:
-- Create `packages/cli/src/config.ts` - Configuration loading and merging
-- Modify all CLI commands to use config loader
-
-**Dependencies**:
-```bash
-pnpm add -D cosmiconfig
-```
-
-**Algorithm**:
-
-1. **Load config**: Use `cosmiconfig` to search for config files
-2. **Merge with CLI flags**: CLI flags override config file settings
-3. **Validate schema**: Ensure all config keys are valid
-4. **Apply to commands**: Pass config to formatter, compiler, etc.
-
-**Integration Points**:
-- All CLI commands should call `loadConfig()` before executing
-- Merge CLI flags with config file (flags take precedence)
-- Config schema should match command option interfaces
-
-**Input/Output**:
-- **Input**: Config file in project root
-- **Output**: Merged configuration object used by all commands
-
-**Error Handling**:
-- If config file has syntax errors, show clear error message
-- If config values are invalid, show validation errors
-- If no config file exists, use defaults (not an error)
-
-### Code Examples
-
-**Config File** (`.collierc`):
-```json
-{
-  "format": {
-    "indent": 2,
-    "sortAttributes": true
-  },
-  "compile": {
-    "jsxRuntime": "automatic",
-    "sourcemap": true
-  },
-  "watch": {
-    "outDir": "dist/compiled",
-    "verbose": false
-  }
-}
-```
-
-**Config File** (`collie.config.js`):
-```javascript
-module.exports = {
-  format: {
-    indent: process.env.CI ? 2 : 4,
-    sortAttributes: true
-  },
-  compile: {
-    jsxRuntime: "automatic"
-  }
-};
-```
-
-**Core Implementation** (`packages/cli/src/config.ts`):
-```typescript
-import { cosmiconfig } from "cosmiconfig";
-
-export interface CollieConfig {
-  format?: {
-    indent?: number;
-    sortAttributes?: boolean;
-    trailingComma?: boolean;
-  };
-  compile?: {
-    jsxRuntime?: "automatic" | "classic";
-    sourcemap?: boolean;
-  };
-  watch?: {
-    outDir?: string;
-    verbose?: boolean;
-  };
-  build?: {
-    outDir?: string;
-    sourcemap?: boolean;
-  };
-}
-
-const explorer = cosmiconfig("collie");
-
-export async function loadConfig(cwd: string = process.cwd()): Promise<CollieConfig> {
-  try {
-    const result = await explorer.search(cwd);
-    return result?.config ?? {};
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to load config: ${message}`);
-  }
-}
-
-export function mergeConfig<T extends Record<string, any>>(
-  config: CollieConfig,
-  section: keyof CollieConfig,
-  cliFlags: T
-): T {
-  const sectionConfig = config[section] ?? {};
-  
-  // CLI flags override config file
-  return {
-    ...sectionConfig,
-    ...Object.fromEntries(
-      Object.entries(cliFlags).filter(([_, value]) => value !== undefined)
-    )
-  } as T;
-}
-
-export function validateConfig(config: CollieConfig): string[] {
-  const errors: string[] = [];
-  
-  if (config.format?.indent && (config.format.indent < 1 || config.format.indent > 8)) {
-    errors.push("format.indent must be between 1 and 8");
-  }
-  
-  if (config.compile?.jsxRuntime && !["automatic", "classic"].includes(config.compile.jsxRuntime)) {
-    errors.push("compile.jsxRuntime must be 'automatic' or 'classic'");
-  }
-  
-  return errors;
-}
-```
-
-**Usage in Commands** (update `runFormat()` in [`packages/cli/src/index.ts`](packages/cli/src/index.ts)):
-```typescript
-import { loadConfig, mergeConfig } from "./config";
-
-async function runFormat(args: string[]): Promise<void> {
-  const config = await loadConfig();
-  
-  const cliFlags = {
-    indent: parseInt(getFlag(args, "--indent") ?? "0") || undefined,
-    write: args.includes("--write") || args.includes("-w"),
-    check: args.includes("--check") || args.includes("-c")
-  };
-  
-  const options = mergeConfig(config, "format", cliFlags);
-  
-  // ... rest of implementation
-}
-```
-
-### Testing Requirements
-
-1. **Unit tests** (`packages/cli/tests/config.test.ts`):
-   - Test config file loading (JSON, JS, MJS)
-   - Test config merging (CLI flags override config)
-   - Test config validation
-   - Test handling of missing config
-   
-2. **Integration tests**:
-   - Create temp directory with `.collierc`
-   - Run commands and verify config is applied
-   - Test invalid config shows proper errors
-
-### Estimated Effort
-
-**4-5 hours**:
-- 2 hours: Config loading with cosmiconfig
-- 1 hour: Config merging and validation
-- 1 hour: Integrate into all CLI commands
-- 1 hour: Tests and documentation
-
-### Dependencies
-
-**Prerequisites**: None - can be added independent of other features
-
-**Benefits**: Features #1-4 all become more configurable
-
-### Success Criteria
-
-- ✅ `.collierc` (JSON) is loaded and applied
-- ✅ `collie.config.js` (CommonJS) is loaded and applied
-- ✅ CLI flags override config file settings
-- ✅ Invalid config shows clear validation errors
-- ✅ Missing config file uses defaults (no error)
-- ✅ All CLI commands respect config file
-- ✅ Config can be nested (per-command sections)
-- ✅ TypeScript types are provided for config
+- Until the new system ships, teams must configure CLI behavior via explicit flags.
+- Do **not** reintroduce `.collierc` references; the new root-level `collie.config.*` files will replace it.
 
 ---
 

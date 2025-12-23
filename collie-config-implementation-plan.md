@@ -150,7 +150,7 @@ The new config system should:
 
 ## Stage 0 – Remove Legacy Config Support
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Find and completely remove any existing config file support (e.g. `.collierc`, older `collie.config` implementations) so we can re-introduce the new system from a clean slate.
 
@@ -211,7 +211,9 @@ The new config system should:
 
 ### Implementation Summary (Stage 0)
 
-*Add this section after implementing Stage 0, describing what you removed, where, and any TODOs.*
+- Searched the repo for `collierc`, `collie.config`, `CollieConfig`, and `loadConfig` references to confirm no legacy loader modules or exports remain.
+- Updated `cli-report.md` to drop the unused `--config` flag reference and replaced the old `.collierc` feature spec with a reboot notice pointing to this staged plan.
+- No code changes were required beyond documentation cleanup, leaving the tree ready for Stage 1 to introduce the new `@collie-lang/config` package.
 
 ---
 
