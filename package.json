@@ -11,6 +11,7 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "publish-packages": "changeset publish",
+    "prepare:cdn": "pnpm --filter @collie-lang/html-runtime prepare-cdn",
     "test": "pnpm -r --filter='@collie-lang/*' test && vitest run tests",
     "test:integration": "vitest run tests"
   },

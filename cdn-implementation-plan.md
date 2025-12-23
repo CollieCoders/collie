@@ -462,7 +462,7 @@ pnpm --filter @collie-lang/html-runtime prepare-cdn
 
 # 📦 STAGE 6 — Add Helpful NPM Scripts in Root + Runtime Package
 
-## Status: Not Started
+## Status: 100% Complete
 
 ### Tasks
 
@@ -486,6 +486,9 @@ pnpm --filter @collie-lang/html-runtime prepare-cdn
 ```
 
 ### Implementation Summary (Stage 6)
+
+* Confirmed `packages/html-runtime/package.json` already contains the required `clean`, `build`, `build:versioned`, and `prepare-cdn` scripts; no changes were necessary there.
+* Added the workspace-level `prepare:cdn` script so the runtime can be built from the repo root via `pnpm prepare:cdn -w` (`package.json`).
 
 ---
 
