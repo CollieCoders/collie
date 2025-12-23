@@ -57,8 +57,15 @@ export default defineConfig({
           outFile: "public/index.html"
         },
         runtime: {
-          emit: true,
-          path: "public/collie-runtime.js"
+          mode: "local",
+          local: {
+            path: "public/collie-runtime.js"
+          },
+          cdn: {
+            version: "v1",
+            runtimeUrl: "https://cdn.collie-lang.org/v1/collie-html-runtime.js",
+            convertUrl: "https://cdn.collie-lang.org/v1/collie-convert.js"
+          }
         },
         smartMounts: {
           enforce: "warn",

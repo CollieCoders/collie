@@ -373,7 +373,7 @@ runtime?: {
 
 # 📦 STAGE 4 — Update Example Config Files
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Add CDN runtime examples to:
 
@@ -403,6 +403,9 @@ html: {
    * Exclude fields requiring functions.
 
 ### Implementation Summary (Stage 4)
+
+* Updated the TS, JS, and JSON example configs to demonstrate the new HTML runtime options, including both local file usage and CDN overrides (`docs/examples/config/collie.config.example.ts|.js|.json`).
+* Examples now illustrate how to select the local runtime while still surfacing the CDN configuration block for reference; no other sections were modified.
 
 ---
 
