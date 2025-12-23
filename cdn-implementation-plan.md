@@ -411,7 +411,7 @@ html: {
 
 # 📦 STAGE 5 — Add GitHub Workflow for Publishing Runtime to CDN
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Add CI workflow to build and deploy CDN assets.
 
@@ -454,6 +454,9 @@ pnpm --filter @collie-lang/html-runtime prepare-cdn
 4. Optional: Create GitHub Release for the tag.
 
 ### Implementation Summary (Stage 5)
+
+* Added `.github/workflows/publish-html-runtime.yml` that triggers on `runtime-v*` tags, installs deps with pnpm, builds the HTML runtime package, deploys the `dist` output via Cloudflare’s official Pages action, and publishes a GitHub release for the tag.
+* Workflow uses repo/Cloudflare secrets for authentication; no other files were touched in this stage.
 
 ---
 
