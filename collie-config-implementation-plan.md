@@ -818,7 +818,7 @@ Target files (already created but currently blank):
          root: ".",
          input: "src/collie/**/*.collie",
          output: {
-           dir: "public/generated",
+           dir: "public/collie/generated",
            format: "tsx", // may be ignored for HTML, but included for completeness
          },
          html: {
@@ -942,7 +942,7 @@ Target files (already created but currently blank):
          "root": ".",
          "input": "src/collie/**/*.collie",
          "output": {
-           "dir": "public/generated",
+           "dir": "public/collie/generated",
            "format": "tsx"
          },
          "html": {

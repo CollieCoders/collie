@@ -39,7 +39,7 @@ export default defineConfig({
       root: ".",
       input: "src/collie/**/*.collie",
       output: {
-        dir: "public/generated",
+        dir: "public/collie/generated",
         format: "tsx"
       },
       html: {

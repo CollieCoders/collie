@@ -1,21 +1,14 @@
-type PlaceholderEntry = {
-  id: string;
-  element: HTMLElement;
-};
+const PLACEHOLDER_SUFFIX = "-collie";
+const PLACEHOLDER_SELECTOR = "[id$='-collie']";
+const PARTIAL_BASE_PATH = "/collie/generated";
 
-export type CollieHtmlRuntimeOptions = {
-  basePath?: string;
-  selectors?: {
-    idExact?: string[];
-    idSuffix?: string;
-    dataAttribute?: string;
-  };
-  fetchImpl?: typeof fetch;
+type PlaceholderEntry = {
+  partialId: string;
+  element: HTMLElement;
 };
 
 export type CollieHtmlRuntimeAPI = {
   refresh: () => Promise<void>;
-  loadPartialById: (id: string) => Promise<string>;
 };
 
 declare global {
@@ -24,51 +17,38 @@ declare global {
   }
 }
 
-const DEFAULT_OPTIONS: Required<Pick<CollieHtmlRuntimeOptions, "basePath" | "selectors">> = {
-  basePath: "/collie-generated",
-  selectors: {
-    idExact: [],
-    idSuffix: "-collie",
-    dataAttribute: "data-collie-id",
-  },
-};
-
-let activeOptions: CollieHtmlRuntimeOptions = { ...DEFAULT_OPTIONS };
 let initialized = false;
 
-export function initCollieHtmlRuntime(
-  options: CollieHtmlRuntimeOptions = {}
-): CollieHtmlRuntimeAPI {
-  activeOptions = mergeOptions(options);
-  if (!initialized) {
-    window.CollieHtmlRuntime = {
-      refresh,
-      loadPartialById,
-    };
+export function initCollieHtmlRuntime(): CollieHtmlRuntimeAPI {
+  const hasDom =
+    typeof window !== "undefined" && typeof document !== "undefined";
+
+  if (!initialized && hasDom) {
+    window.CollieHtmlRuntime = { refresh };
     scheduleInitialRefresh();
     initialized = true;
   }
-  return window.CollieHtmlRuntime!;
-}
 
-function mergeOptions(
-  options: CollieHtmlRuntimeOptions
-): CollieHtmlRuntimeOptions {
+  if (hasDom && window.CollieHtmlRuntime) {
+    return window.CollieHtmlRuntime;
+  }
+
   return {
-    ...DEFAULT_OPTIONS,
-    ...options,
-    selectors: {
-      ...DEFAULT_OPTIONS.selectors,
-      ...options.selectors,
+    refresh: async () => {
+      /* no-op outside the browser */
     },
   };
 }
 
 function scheduleInitialRefresh() {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      void refresh();
-    });
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        void refresh();
+      },
+      { once: true }
+    );
     return;
   }
   void refresh();
@@ -77,118 +57,68 @@ function scheduleInitialRefresh() {
 async function refresh(): Promise<void> {
   const placeholders = collectPlaceholders();
   await Promise.all(
-    placeholders.map(({ id, element }) => loadAndInjectPartial(id, element))
+    placeholders.map(({ partialId, element }) =>
+      loadAndInjectPartial(partialId, element)
+    )
   );
-}
-
-async function loadPartialById(id: string): Promise<string> {
-  return fetchPartialHtml(id);
 }
 
 function collectPlaceholders(): PlaceholderEntry[] {
-  const config = activeOptions.selectors ?? DEFAULT_OPTIONS.selectors;
+  const elements =
+    document.querySelectorAll<HTMLElement>(PLACEHOLDER_SELECTOR);
   const entries: PlaceholderEntry[] = [];
 
-  if (config.idExact?.length) {
-    for (const id of config.idExact) {
-      if (!id) continue;
-      const el = document.getElementById(id);
-      if (el instanceof HTMLElement) {
-        entries.push({ id, element: el });
-      }
-    }
+  for (const element of elements) {
+    const partialId = derivePartialId(element);
+    if (!partialId) continue;
+    entries.push({ partialId, element });
   }
 
-  if (config.idSuffix) {
-    const suffix = config.idSuffix;
-    const selector = buildAttributeSelector("id", suffix, "$=");
-    for (const el of document.querySelectorAll(selector)) {
-      if (!(el instanceof HTMLElement) || !el.id.endsWith(suffix)) continue;
-      const partialId = el.id.slice(0, -suffix.length);
-      if (partialId) {
-        entries.push({ id: partialId, element: el });
-      }
-    }
-  }
-
-  if (config.dataAttribute) {
-    const attr = config.dataAttribute;
-    const selector = buildAttributeSelector(attr);
-    for (const el of document.querySelectorAll(selector)) {
-      if (!(el instanceof HTMLElement)) continue;
-      const value = el.getAttribute(attr);
-      if (value) {
-        entries.push({ id: value, element: el });
-      }
-    }
-  }
-
-  return dedupePlaceholders(entries);
+  return entries;
 }
 
-function buildAttributeSelector(
-  attr: string,
-  value?: string,
-  operator: "" | "$=" | "^=" = ""
-): string {
-  const attrEscaped = escapeForSelector(attr);
-  if (value === undefined) {
-    return `[${attrEscaped}]`;
-  }
-  const escaped = escapeForSelector(value);
-  return operator
-    ? `[${attrEscaped}${operator}"${escaped}"]`
-    : `[${attrEscaped}="${escaped}"]`;
-}
-
-function dedupePlaceholders(entries: PlaceholderEntry[]): PlaceholderEntry[] {
-  const seen = new Set<HTMLElement>();
-  const deduped: PlaceholderEntry[] = [];
-  for (const entry of entries) {
-    if (seen.has(entry.element)) continue;
-    seen.add(entry.element);
-    deduped.push(entry);
-  }
-  return deduped;
+function derivePartialId(element: HTMLElement): string | null {
+  const elementId = element.id ?? "";
+  if (!elementId || !elementId.endsWith(PLACEHOLDER_SUFFIX)) return null;
+  const partialId = elementId.slice(0, -PLACEHOLDER_SUFFIX.length).trim();
+  return partialId || null;
 }
 
 async function loadAndInjectPartial(
-  id: string,
+  partialId: string,
   element: HTMLElement
 ): Promise<void> {
+  const url = buildPartialUrl(partialId);
+  if (!url) return;
+
   try {
-    const html = await fetchPartialHtml(id);
+    const html = await fetchPartialHtml(url);
     element.innerHTML = html;
   } catch (error) {
-    console.warn(`[CollieRuntime] Failed to load partial "${id}"`, error);
+    const details =
+      error instanceof Error ? error.message : JSON.stringify(error);
+    console.warn(
+      `[CollieHtmlRuntime] Failed to load partial from ${url}: ${details}`
+    );
   }
 }
 
-async function fetchPartialHtml(id: string): Promise<string> {
-  const basePath = (activeOptions.basePath || DEFAULT_OPTIONS.basePath).replace(
-    /\/$/,
-    ""
-  );
-  const normalizedId = id.trim();
-  if (!normalizedId) {
-    return "";
-  }
-  const url = `${basePath}/${normalizedId}.html`;
-  const fetchImpl = activeOptions.fetchImpl ?? fetch;
-  const response = await fetchImpl(url);
+function buildPartialUrl(partialId: string): string | null {
+  const normalized = partialId.trim();
+  if (!normalized) return null;
+  return `${PARTIAL_BASE_PATH}/${encodeURIComponent(normalized)}.html`;
+}
+
+async function fetchPartialHtml(url: string): Promise<string> {
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new Error(`HTTP ${response.status} (${response.statusText})`);
   }
   return response.text();
 }
 
-function escapeForSelector(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/"/g, '\\"');
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  initCollieHtmlRuntime();
 }
-
-initCollieHtmlRuntime();
 
 export default initCollieHtmlRuntime;

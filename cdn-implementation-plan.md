@@ -260,10 +260,10 @@ export function convertDomToCollie() {
    * `"${basePath}/${id}.html"`
    * For now, assume:
 
-     * Local dev base path: `/collie-generated`
+     * Local dev base path: `/collie/generated`
      * CDN does not affect fetch path (only script delivery)
 
-4. Fetch partial HTML (e.g. `/collie-generated/hero.html`).
+4. Fetch partial HTML (e.g. `/collie/generated/hero.html`).
 
 5. Inject into element:
 
@@ -494,7 +494,7 @@ pnpm --filter @collie-lang/html-runtime prepare-cdn
 
 # 📦 STAGE 7 — Future Improvements (Stubs Only)
 
-## Status: Not Started
+## Status: 100% Complete
 
 Codex should create stubs only; do not implement actual logic:
 
@@ -504,3 +504,5 @@ Codex should create stubs only; do not implement actual logic:
 * Collie-to-DOM dev preview helpers
 
 ### Implementation Summary (Stage 7)
+* Added `packages/html-runtime/src/future-improvements.ts` with stub helpers for WebSocket auto-refresh, DOM mutation observers, CDN distribution enhancements, and dev preview helpers; each currently only logs a warning.
+* Runtime behavior remains unchanged until those helpers gain real implementations in later stages.

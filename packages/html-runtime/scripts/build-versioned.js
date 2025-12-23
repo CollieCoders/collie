@@ -1,68 +1,83 @@
-#!/usr/bin/env node
-/**
- * Stage 2: Copy compiled runtime files into versioned directories.
- */
+/* eslint-disable no-console */
 const fs = require("fs");
 const path = require("path");
 
-const packageRoot = path.resolve(__dirname, "..");
-const distDir = path.join(packageRoot, "dist");
-const tempDir = path.join(distDir, "temp");
+const rootDir = path.resolve(__dirname, "..");
+const tempDir = path.join(rootDir, "dist", "temp");
+const distDir = path.join(rootDir, "dist");
 
-function readPackageVersion() {
-  const pkgPath = path.join(packageRoot, "package.json");
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-  if (!pkg.version) {
-    throw new Error("Missing version in package.json");
-  }
-  return pkg.version;
-}
+// Read package version
+const pkg = require(path.join(rootDir, "package.json"));
+const version = pkg.version; // e.g. "1.0.0"
+
+// Derived version tags
+const majorTag = "v" + version.split(".")[0]; // "v1"
+const fullTag = "v" + version;                // "v1.0.0"
+
+const targets = ["collie-html-runtime", "collie-convert"];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function copyRuntimeFiles(targetDirs) {
-  const files = ["collie-html-runtime.js", "collie-convert.js"];
-  for (const file of files) {
-    const sourcePath = path.join(tempDir, file);
-    if (!fs.existsSync(sourcePath)) {
-      console.warn(`[build-versioned] Missing "${file}" in dist/temp; skipping.`);
-      continue;
-    }
-    for (const targetDir of targetDirs) {
-      const targetPath = path.join(targetDir, file);
-      fs.copyFileSync(sourcePath, targetPath);
-      console.log(`[build-versioned] Copied ${file} -> ${targetPath}`);
-    }
-  }
+function findSourceFile(baseName) {
+  const jsPath = path.join(tempDir, baseName + ".js");
+  const mjsPath = path.join(tempDir, baseName + ".mjs");
+
+  if (fs.existsSync(jsPath)) return jsPath;
+  if (fs.existsSync(mjsPath)) return mjsPath;
+
+  return null;
 }
 
-function removeTempDir() {
-  if (fs.existsSync(tempDir)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+function copyRuntimeFile(baseName, versionTag) {
+  const src = findSourceFile(baseName);
+  if (!src) {
+    console.warn(
+      `[build-versioned] Missing "${baseName}.js/.mjs" in dist/temp; skipping for ${versionTag}.`
+    );
+    return;
   }
+
+  const targetDir = path.join(distDir, versionTag);
+  ensureDir(targetDir);
+
+  const dest = path.join(targetDir, baseName + ".js"); // always emit .js
+  fs.copyFileSync(src, dest);
+
+  console.log(
+    `[build-versioned] Copied ${path.basename(src)} -> ${path.relative(
+      rootDir,
+      dest
+    )}`
+  );
 }
 
 function main() {
   if (!fs.existsSync(tempDir)) {
-    console.error('[build-versioned] Missing "dist/temp" directory. Did you run "pnpm build" first?');
-    process.exit(1);
+    console.warn(
+      `[build-versioned] No dist/temp directory found at ${tempDir}. Did you run "pnpm build" first?`
+    );
+    return;
   }
 
-  const version = readPackageVersion();
-  const major = version.split(".")[0] || "1";
-  const majorTag = `v${major}`;
-  const versionTag = `v${version}`;
+  for (const baseName of targets) {
+    // Copy to v1/
+    copyRuntimeFile(baseName, majorTag);
+    // Copy to v1.0.0/
+    copyRuntimeFile(baseName, fullTag);
+  }
 
-  const targetDirs = [
-    path.join(distDir, majorTag),
-    path.join(distDir, versionTag),
-  ];
-
-  targetDirs.forEach(ensureDir);
-  copyRuntimeFiles(targetDirs);
-  removeTempDir();
+  // Clean up temp dir
+  try {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    console.log(`[build-versioned] Cleaned up ${path.relative(rootDir, tempDir)}`);
+  } catch (err) {
+    console.warn(
+      `[build-versioned] Failed to remove temp dir ${tempDir}:`,
+      err.message
+    );
+  }
 }
 
 main();
