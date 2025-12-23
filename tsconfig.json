@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/config" },
     { "path": "./packages/compiler" },
     { "path": "./packages/vite" },
     { "path": "./packages/cli" }

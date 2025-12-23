@@ -219,7 +219,7 @@ The new config system should:
 
 ## Stage 1 – Introduce `@collie-lang/config` Package & Types
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Create a dedicated `@collie-lang/config` module (or equivalent internal module if the repo doesn’t use separate packages) that defines the core config types and a `defineConfig` helper. At this stage, **no config loading from disk yet** – just types and helpers.
 
@@ -377,7 +377,10 @@ The new config system should:
 
 ### Implementation Summary (Stage 1)
 
-*Add after completion of Stage 1.*
+- Created the `@collie-lang/config` workspace (`packages/config`) with tsup + TypeScript configs mirroring other packages.
+- Implemented the shared config types (`src/types.ts`) and `defineConfig` helper (`src/index.ts`) that re-exports those definitions.
+- Added the new package to the root TypeScript solution references (`tsconfig.json`) so it participates in repo-wide builds.
+- Attempted to run `pnpm --filter @collie-lang/config build`, but pnpm consistently aborted with `Signal(6)` in this environment; please run that command locally to verify the build artifacts.
 
 ---
 
