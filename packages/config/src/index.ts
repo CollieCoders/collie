@@ -8,6 +8,7 @@ import type { CollieConfig, CollieProjectConfig } from "./types";
 export * from "./types";
 
 const DEFAULT_CONFIG_FILES = [
+  "collie.config.ts",
   "collie.config.js",
   "collie.config.mjs",
   "collie.config.cjs",
@@ -15,6 +16,11 @@ const DEFAULT_CONFIG_FILES = [
 ] as const;
 
 const requireForCjs = createRequire(import.meta.url);
+type TsImportFn = (
+  specifier: string,
+  parent: string | { parentURL: string }
+) => Promise<unknown>;
+let tsImportFnPromise: Promise<TsImportFn> | null = null;
 
 export interface LoadConfigOptions {
   cwd?: string;
@@ -38,11 +44,8 @@ export async function loadConfig(
   const ext = path.extname(resolvedPath).toLowerCase();
 
   if (ext === ".ts") {
-    throw new Error(
-      `TypeScript configs (${path.basename(
-        resolvedPath
-      )}) are not supported yet. Rename to a JavaScript or JSON config until Stage 3 lands.`
-    );
+    const rawConfig = await loadTsConfigFile(resolvedPath);
+    return validateBasicConfig(rawConfig, resolvedPath);
   }
 
   const rawConfig = await loadConfigFile(resolvedPath, ext);
@@ -87,6 +90,10 @@ async function loadConfigFile(
   filePath: string,
   ext: string
 ): Promise<unknown> {
+  if (ext === ".ts") {
+    return loadTsConfigFile(filePath);
+  }
+
   if (ext === ".json") {
     const contents = await fs.readFile(filePath, "utf8");
     return JSON.parse(contents);
@@ -102,6 +109,26 @@ async function loadConfigFile(
   }
 
   throw new Error(`Unsupported config extension: ${ext}`);
+}
+
+async function loadTsConfigFile(filePath: string): Promise<unknown> {
+  try {
+    const tsImport = await getTsImport();
+    const fileUrl = pathToFileURL(filePath).href;
+    return await tsImport(fileUrl, { parentURL: fileUrl });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load TypeScript config at "${filePath}": ${message}`
+    );
+  }
+}
+
+async function getTsImport(): Promise<TsImportFn> {
+  if (!tsImportFnPromise) {
+    tsImportFnPromise = import("tsx/esm/api").then((mod) => mod.tsImport);
+  }
+  return tsImportFnPromise;
 }
 
 function validateBasicConfig(config: unknown, filePath: string): CollieConfig {

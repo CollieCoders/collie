@@ -495,7 +495,7 @@ TS support (`collie.config.ts`) will be added in **Stage 3**.
 
 ## Stage 3 – Add TS Config Support (`collie.config.ts`)
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Extend `loadConfig` so it can also load `collie.config.ts` files from the project root, in addition to JS/JSON files.
 
@@ -568,7 +568,10 @@ export default defineConfig({
 
 ### Implementation Summary (Stage 3)
 
-*Add after completion of Stage 3.*
+- Extended the search order so `.ts` configs are discovered before JS/JSON files and added a `tsx` dependency to execute TypeScript configs inside `@collie-lang/config`.
+- Implemented a lazy `tsImport`-based loader (`tsx/esm/api`) that compiles + imports the config (respecting any relative imports) and reuses the existing validation pipeline.
+- TypeScript loading errors now surface with the config path and underlying message; non-TS configs continue to load as before with `.collierc*` formats remaining unsupported.
+- Attempting to run `./node_modules/.bin/tsc -p packages/config/tsconfig.json --noEmit` still exits with `Signal(6)` in this environment, so please re-run typechecks/builds locally after pulling these changes.
 
 ---
 
