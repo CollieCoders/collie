@@ -6,6 +6,24 @@ import type { Diagnostic } from "./diagnostics";
 import type { RootNode } from "./ast";
 
 export type {
+  CollieConfig,
+  CollieProjectConfig,
+  CollieCompilerOptions,
+  CollieFeatureOptions,
+  CollieEditorOptions,
+  HtmlProjectOptions,
+  ReactProjectOptions,
+  NormalizedCollieConfig,
+  NormalizedCollieProjectConfig
+} from "@collie-lang/config";
+export {
+  defineConfig,
+  loadConfig,
+  loadAndNormalizeConfig,
+  normalizeConfig
+} from "@collie-lang/config";
+
+export type {
   Diagnostic,
   DiagnosticSeverity,
   SourcePos,

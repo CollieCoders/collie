@@ -20,6 +20,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "@collie-lang/config": "workspace:*"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

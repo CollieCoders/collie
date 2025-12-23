@@ -688,7 +688,7 @@ export default defineConfig({
 
 ## Stage 5 – Re-export Config Utilities from `@collie-lang/compiler` (Optional Integration)
 
-### Status: Not Started
+### Status: 100% Complete
 
 **Goal:** Make the config utilities accessible from `@collie-lang/compiler` as a convenience, without deeply coupling the two packages.
 
@@ -728,7 +728,9 @@ export default defineConfig({
 
 ### Implementation Summary (Stage 5)
 
-*Add after completion of Stage 5, including whether you chose to re-export or not.*
+- Added a dependency on `@collie-lang/config` inside `@collie-lang/compiler` and re-exported the config types plus helpers (`defineConfig`, `loadConfig`, `loadAndNormalizeConfig`, `normalizeConfig`) from the compiler’s main entry point.
+- Developer ergonomics improve because consumers that already import from `@collie-lang/compiler` can access config utilities without adding a second import.
+- Please run the compiler package build (`pnpm --filter @collie-lang/compiler build`) locally to ensure everything emits cleanly once dependencies are installed, since local commands still hit the sandbox signal issue.
 
 ---
 
