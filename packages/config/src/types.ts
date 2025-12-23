@@ -49,8 +49,15 @@ export interface HtmlProjectOptions {
     outFile?: string;
   };
   runtime?: {
-    emit?: boolean;
-    path?: string;
+    mode?: "local" | "cdn";
+    local?: {
+      path?: string;
+    };
+    cdn?: {
+      version?: string;
+      runtimeUrl?: string;
+      convertUrl?: string;
+    };
   };
   smartMounts?: {
     enforce?: "warn" | "error" | "off";

@@ -338,7 +338,7 @@ dist/
 
 # 📦 STAGE 3 — Extend Config Schema for CDN Runtime Support
 
-## Status: Not Started
+## Status: 100% Complete
 
 **Goal:** Add runtime mode to `HtmlProjectOptions` inside `@collie-lang/config`.
 
@@ -365,6 +365,9 @@ runtime?: {
 3. Update JSON schema (when applicable in later stages).
 
 ### Implementation Summary (Stage 3)
+
+* Extended `HtmlProjectOptions.runtime` to support the new `mode`, `local`, and `cdn` options within `@collie-lang/config` (`packages/config/src/types.ts`).
+* No JSON schema artifacts exist yet, so no schema update was required; tests and other files remain untouched pending future stages.
 
 ---
 
