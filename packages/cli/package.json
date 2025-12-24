@@ -1,14 +1,28 @@
 {
   "name": "@collie-lang/cli",
-  "version": "0.0.1",
+  "version": "2.0.1",
   "description": "Collie CLI (init a Vite project with Collie).",
   "license": "MIT",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "bin": {
     "collie": "./dist/index.js"
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -17,9 +31,17 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
+    "@collie-lang/compiler": "workspace:*",
+    "@collie-lang/next": "workspace:*",
+    "chokidar": "^3.6.0",
+    "diff": "^5.2.0",
+    "fast-glob": "^3.3.2",
+    "prompts": "^2.4.2",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@types/diff": "^5.0.3",
+    "@types/prompts": "^2.4.9",
     "typescript": "^5.7.2"
   }
 }

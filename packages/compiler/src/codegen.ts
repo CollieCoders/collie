@@ -10,21 +10,29 @@ import type {
   Node,
   PropsDecl,
   RootNode,
+  SlotBlock,
   TextNode
 } from "./ast";
 
 export interface CodegenOptions {
   componentName: string;
   jsxRuntime: "automatic" | "classic";
+  flavor: "jsx" | "tsx";
 }
 
 export function generateModule(root: RootNode, options: CodegenOptions): string {
-  const { componentName, jsxRuntime } = options;
+  const { componentName, jsxRuntime, flavor } = options;
+  const isTsx = flavor === "tsx";
 
   const aliasEnv = buildClassAliasEnvironment(root.classAliases);
   const jsx = renderRootChildren(root.children, aliasEnv);
+  const propsDestructure = emitPropsDestructure(root.props);
 
   const parts: string[] = [];
+
+  if (root.clientComponent) {
+    parts.push(`"use client";`);
+  }
 
   // Classic runtime needs React in scope for JSX transforms.
   if (jsxRuntime === "classic" && templateUsesJsx(root)) {
@@ -32,15 +40,24 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   }
 
   // JS-safe typedef for Props (JSDoc)
-  parts.push(emitPropsType(root.props));
+  parts.push(emitPropsType(root.props, flavor));
 
-  // JS-safe param typing (JSDoc), so tooling can still understand Props.
-  parts.push(`/** @param {Props} props */`);
+  if (!isTsx) {
+    // JS-safe param typing (JSDoc), so tooling can still understand Props.
+    parts.push(`/** @param {Props} props */`);
+  }
 
   // IMPORTANT: Do not emit TypeScript annotations here.
-  parts.push(
-    [`export default function ${componentName}(props) {`, `  return ${jsx};`, `}`].join("\n")
-  );
+  const functionLines = [
+    isTsx
+      ? `export default function ${componentName}(props: Props) {`
+      : `export default function ${componentName}(props) {`
+  ];
+  if (propsDestructure) {
+    functionLines.push(`  ${propsDestructure}`);
+  }
+  functionLines.push(`  return ${jsx};`, `}`);
+  parts.push(functionLines.join("\n"));
 
   return parts.join("\n\n");
 }
@@ -115,9 +132,9 @@ function emitNodeInJsx(node: Node, aliasEnv: Map<string, readonly string[]>): st
     return `{${emitForExpression(node, aliasEnv)}}`;
   }
   if (node.type === "Component") {
-    return emitComponent(node, aliasEnv);
+    return wrapWithGuard(emitComponent(node, aliasEnv), node.guard, "jsx");
   }
-  return emitElement(node, aliasEnv);
+  return wrapWithGuard(emitElement(node, aliasEnv), node.guard, "jsx");
 }
 
 function emitElement(
@@ -142,12 +159,14 @@ function emitComponent(
   aliasEnv: Map<string, readonly string[]>
 ): string {
   const attrs = emitAttributes(node.attributes, aliasEnv);
+  const slotProps = emitSlotProps(node, aliasEnv);
+  const allAttrs = `${attrs}${slotProps}`;
   const children = emitChildrenWithSpacing(node.children, aliasEnv);
   
   if (children.length > 0) {
-    return `<${node.name}${attrs}>${children}</${node.name}>`;
+    return `<${node.name}${allAttrs}>${children}</${node.name}>`;
   } else {
-    return `<${node.name}${attrs} />`;
+    return `<${node.name}${allAttrs} />`;
   }
 }
 
@@ -197,6 +216,29 @@ function emitAttributes(
     // The value is already in the correct format (e.g., {expr} or "string")
     return ` ${attr.name}=${attr.value}`;
   }).join("");
+}
+
+function emitSlotProps(
+  node: ComponentNode,
+  aliasEnv: Map<string, readonly string[]>
+): string {
+  if (!node.slots || node.slots.length === 0) {
+    return "";
+  }
+  return node.slots
+    .map((slot) => {
+      const expr = emitNodesExpression(slot.children, aliasEnv);
+      return ` ${slot.name}={${expr}}`;
+    })
+    .join("");
+}
+
+function wrapWithGuard(rendered: string, guard: string | undefined, context: "jsx" | "expression"): string {
+  if (!guard) {
+    return rendered;
+  }
+  const expression = `(${guard}) && ${rendered}`;
+  return context === "jsx" ? `{${expression}}` : expression;
 }
 
 function emitForExpression(
@@ -307,15 +349,31 @@ function emitSingleNodeExpression(
   if (node.type === "For") {
     return emitForExpression(node, aliasEnv);
   }
+  if (node.type === "Element") {
+    return wrapWithGuard(emitElement(node, aliasEnv), node.guard, "expression");
+  }
+  if (node.type === "Component") {
+    return wrapWithGuard(emitComponent(node, aliasEnv), node.guard, "expression");
+  }
   if (node.type === "Text") {
     return `<>${emitNodeInJsx(node, aliasEnv)}</>`;
   }
   return emitNodeInJsx(node, aliasEnv);
 }
 
-function emitPropsType(props?: PropsDecl): string {
+function emitPropsType(props: PropsDecl | undefined, flavor: "jsx" | "tsx"): string {
+  if (flavor === "tsx") {
+    return emitTsPropsType(props);
+  }
+  return emitJsDocPropsType(props);
+}
+
+function emitJsDocPropsType(props?: PropsDecl): string {
   // Emit JS-safe JSDoc typedef (Rollup can parse this, and TS tooling can read it).
-  if (!props || !props.fields.length) {
+  if (!props) {
+    return "/** @typedef {any} Props */";
+  }
+  if (!props.fields.length) {
     return "/** @typedef {{}} Props */";
   }
 
@@ -328,6 +386,27 @@ function emitPropsType(props?: PropsDecl): string {
     .join("; ");
 
   return `/** @typedef {{ ${fields} }} Props */`;
+}
+
+function emitTsPropsType(props?: PropsDecl): string {
+  if (!props || props.fields.length === 0) {
+    return "export type Props = Record<string, never>;";
+  }
+
+  const lines = props.fields.map((field) => {
+    const optional = field.optional ? "?" : "";
+    return `  ${field.name}${optional}: ${field.typeText};`;
+  });
+
+  return ["export interface Props {", ...lines, "}"].join("\n");
+}
+
+function emitPropsDestructure(props?: PropsDecl): string | null {
+  if (!props || props.fields.length === 0) {
+    return null;
+  }
+  const names = props.fields.map((field) => field.name);
+  return `const { ${names.join(", ")} } = props;`;
 }
 
 function escapeText(value: string): string {

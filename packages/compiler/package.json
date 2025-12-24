@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/compiler",
-  "version": "0.0.1",
+  "version": "5.0.0",
   "description": "Collie compiler core (parser + diagnostics + TSX codegen).",
   "license": "MIT",
   "type": "module",
@@ -14,14 +14,21 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@collie-lang/config": "workspace:*"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx tests/classes.test.ts",
+    "test": "tsx tests/classes.test.ts && tsx tests/props.test.ts && tsx tests/directives.test.ts && tsx tests/slots-guards.test.ts && tsx tests/html-codegen.test.ts && tsx tests/id-directive.test.ts",
     "lint": "echo \"(mvp) no lint configured\""
   },
   "devDependencies": {

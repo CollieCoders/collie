@@ -12,9 +12,11 @@ import type {
   Node,
   PropsField,
   RootNode,
+  SlotBlock,
   TextNode
 } from "./ast";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
+import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
 
 export interface ParseResult {
   root: RootNode;
@@ -28,7 +30,14 @@ interface ConditionalBranchContext {
   children: Node[];
 }
 
-type ParentNode = RootNode | ElementNode | ComponentNode | ForNode | ConditionalBranchContext;
+interface SlotContext {
+  kind: "Slot";
+  owner: ComponentNode;
+  slot: SlotBlock;
+  children: Node[];
+}
+
+type ParentNode = RootNode | ElementNode | ComponentNode | ForNode | ConditionalBranchContext | SlotContext;
 
 interface StackItem {
   node: ParentNode;
@@ -64,6 +73,7 @@ export function parse(source: string): ParseResult {
   let propsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
+  let sawNonIdTopLevelDirective = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -149,6 +159,104 @@ export function parse(source: string): ParseResult {
       conditionalChains.delete(level);
     }
 
+    const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
+    if (idMatch) {
+      const column = indent + 1;
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "id directives (#id or id) must appear at the top level before any other directives.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (root.rawId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE703",
+          "id can only appear once per file.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (sawTopLevelTemplateNode || sawNonIdTopLevelDirective) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "id directives must appear before props, classes, @client, or markup.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const remainderRaw = idMatch[2] ?? "";
+      if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "Invalid id directive syntax. Use '#id value', '#id = value', '#id: value', 'id value', 'id = value', or 'id: value'.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      let valuePart = remainderRaw.trim();
+      if (valuePart.startsWith("=") || valuePart.startsWith(":")) {
+        valuePart = valuePart.slice(1).trim();
+      }
+      if (!valuePart) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id directives must specify an identifier value.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (hasWhitespace(valuePart)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id values cannot contain whitespace.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const normalizedId = normalizeIdentifierValue(valuePart);
+      if (!normalizedId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id values must include characters other than the '-collie' suffix.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      root.rawId = valuePart;
+      root.id = normalizedId;
+      continue;
+    }
+
     if (trimmed === "classes") {
       if (level !== 0) {
         pushDiag(
@@ -175,6 +283,7 @@ export function parse(source: string): ParseResult {
           root.classAliases = { aliases: [] };
         }
         classesBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -203,6 +312,45 @@ export function parse(source: string): ParseResult {
       } else {
         root.props = { fields: [] };
         propsBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
+      }
+      continue;
+    }
+
+    if (trimmed === "@client") {
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE401",
+          "@client must appear at the top level before any other blocks.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (sawTopLevelTemplateNode) {
+        pushDiag(
+          diagnostics,
+          "COLLIE401",
+          "@client must appear before any template nodes.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else if (root.clientComponent) {
+        pushDiag(
+          diagnostics,
+          "COLLIE402",
+          "@client can only appear once per file.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      } else {
+        root.clientComponent = true;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -269,6 +417,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, forNode);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       stack.push({ node: forNode, level });
       continue;
@@ -292,6 +441,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, chain);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
@@ -438,6 +588,66 @@ export function parse(source: string): ParseResult {
       continue;
     }
 
+    const slotMatch = trimmed.match(/^@([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (slotMatch) {
+      const slotName = slotMatch[1];
+      if (!isComponentNode(parent)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE501",
+          `Slot '${slotName}' must be a direct child of a component.`,
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        stack.push({ node: createStandaloneSlotContext(slotName), level });
+        continue;
+      }
+
+      if (!parent.slots) {
+        parent.slots = [];
+      }
+      const existing = parent.slots.find((slot) => slot.name === slotName);
+      const slotBlock: SlotBlock =
+        existing ??
+        {
+          type: "Slot",
+          name: slotName,
+          children: []
+        };
+      if (!existing) {
+        parent.slots.push(slotBlock);
+      } else {
+        pushDiag(
+          diagnostics,
+          "COLLIE503",
+          `Duplicate slot '${slotName}' inside ${parent.name}.`,
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      }
+      stack.push({ node: createSlotContext(parent, slotBlock), level });
+      continue;
+    }
+
+    if (trimmed.startsWith("@")) {
+      pushDiag(
+        diagnostics,
+        "COLLIE502",
+        "Invalid slot syntax. Use @slotName on its own line.",
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        trimmed.length
+      );
+      const fallbackName = trimmed.slice(1).split(/\s+/)[0] || "slot";
+      stack.push({ node: createStandaloneSlotContext(fallbackName), level });
+      continue;
+    }
+
     if (lineContent.startsWith("=")) {
       // Check if this starts a multiline JSX block
       const payload = lineContent.slice(1).trim();
@@ -476,6 +686,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
         continue;
       }
@@ -485,6 +696,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -496,6 +708,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -507,6 +720,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, exprNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -537,6 +751,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -545,6 +760,7 @@ export function parse(source: string): ParseResult {
     addChildToParent(parent, element);
     if (parent === root) {
       sawTopLevelTemplateNode = true;
+      sawNonIdTopLevelDirective = true;
     }
     stack.push({ node: element, level });
   }
@@ -580,11 +796,19 @@ function cleanupConditionalChains(state: Map<number, ConditionalChainState>, lev
 }
 
 function addChildToParent(parent: ParentNode, child: Node): void {
-  if (parent.type === "For") {
+  if (isForParent(parent)) {
     parent.body.push(child);
   } else {
     parent.children.push(child);
   }
+}
+
+function isForParent(parent: ParentNode): parent is ForNode {
+  return "type" in parent && parent.type === "For";
+}
+
+function isComponentNode(parent: ParentNode): parent is ComponentNode {
+  return "type" in parent && parent.type === "Component";
 }
 
 interface ConditionalHeaderResult {
@@ -705,7 +929,20 @@ function parseForHeader(
     return null;
   }
   const itemName = match[1];
-  const arrayExpr = match[2].trim();
+  const arrayExprRaw = match[2];
+  if (!itemName || !arrayExprRaw) {
+    pushDiag(
+      diagnostics,
+      "COLLIE210",
+      "Invalid @for syntax. Use @for itemName in arrayExpr.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  const arrayExpr = arrayExprRaw.trim();
   if (!arrayExpr) {
     pushDiag(
       diagnostics,
@@ -767,6 +1004,26 @@ function createConditionalBranchContext(
     branch,
     children: branch.body
   };
+}
+
+function createSlotContext(owner: ComponentNode, slot: SlotBlock): SlotContext {
+  return {
+    kind: "Slot",
+    owner,
+    slot,
+    children: slot.children
+  };
+}
+
+function createStandaloneSlotContext(name: string): SlotContext {
+  const owner: ComponentNode = {
+    type: "Component",
+    name: "__invalid_slot__",
+    attributes: [],
+    children: []
+  };
+  const slot: SlotBlock = { type: "Slot", name, children: [] };
+  return createSlotContext(owner, slot);
 }
 
 function parseTextLine(
@@ -1195,6 +1452,13 @@ function validateNodeClassAliases(
     for (const child of node.children) {
       validateNodeClassAliases(child, defined, diagnostics);
     }
+    if (node.type === "Component" && node.slots) {
+      for (const slot of node.slots) {
+        for (const child of slot.children) {
+          validateNodeClassAliases(child, defined, diagnostics);
+        }
+      }
+    }
     return;
   }
 
@@ -1220,15 +1484,21 @@ function parseElement(
   lineOffset: number,
   diagnostics: Diagnostic[]
 ): ElementNode | ComponentNode | null {
-  // First, try to match tag name
-  const nameMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)/);
-  if (!nameMatch) {
-    // Don't push diagnostic here - let the caller handle fallback to text
-    return null;
-  }
+  let name: string;
+  let cursor = 0;
 
-  const name = nameMatch[1];
-  let cursor = name.length;
+  if (line[cursor] === ".") {
+    // Implicit div shorthand (e.g. `.foo` -> `div.foo`)
+    name = "div";
+  } else {
+    const nameMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)/);
+    if (!nameMatch) {
+      // Don't push diagnostic here - let the caller handle fallback to text
+      return null;
+    }
+    name = nameMatch[1];
+    cursor = name.length;
+  }
 
   // Check what follows the name
   const nextPart = line.slice(cursor);
@@ -1289,6 +1559,33 @@ function parseElement(
     cursor = attrResult.endIndex;
   }
 
+  // Parse optional guard expression
+  let guard: string | undefined;
+  const guardProbeStart = cursor;
+  while (cursor < line.length && /\s/.test(line[cursor])) {
+    cursor++;
+  }
+  if (cursor < line.length && line[cursor] === "?") {
+    const guardColumn = column + cursor;
+    cursor++;
+    const guardExpr = line.slice(cursor).trim();
+    if (!guardExpr) {
+      pushDiag(
+        diagnostics,
+        "COLLIE601",
+        "Guard expressions require a condition after '?'.",
+        lineNumber,
+        guardColumn,
+        lineOffset
+      );
+    } else {
+      guard = guardExpr;
+    }
+    cursor = line.length;
+  } else {
+    cursor = guardProbeStart;
+  }
+
   // Parse inline text or children
   let rest = line.slice(cursor).trimStart();
   const children: Node[] = [];
@@ -1302,12 +1599,16 @@ function parseElement(
   }
 
   if (isComponent) {
-    return {
+    const component: ComponentNode = {
       type: "Component",
       name,
       attributes,
       children
     };
+    if (guard) {
+      component.guard = guard;
+    }
+    return component;
   } else {
     const element: ElementNode = {
       type: "Element",
@@ -1318,6 +1619,9 @@ function parseElement(
     };
     if (classSpans.length) {
       element.classSpans = classSpans;
+    }
+    if (guard) {
+      element.guard = guard;
     }
     return element;
   }
@@ -1396,7 +1700,11 @@ function parseAttributes(
       // This is a new attribute
       if (currentAttr) {
         // Parse the previous attribute
-        parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        // Process any remaining attributes from the previous line
+        while (remaining) {
+          remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+        }
         currentAttr = "";
       }
       currentAttr = trimmedLine;
@@ -1411,9 +1719,12 @@ function parseAttributes(
     }
   }
 
-  // Parse the last attribute
+  // Parse the last attribute and any remaining inline attributes
   if (currentAttr) {
-    parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    while (remaining) {
+      remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+    }
   }
 
   return { attributes, endIndex: cursor };
@@ -1426,18 +1737,78 @@ function parseAndAddAttribute(
   lineNumber: number,
   column: number,
   lineOffset: number
-): void {
+): string {
   const trimmed = attrStr.trim();
-  const match = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.+)$/s);
-  if (match) {
-    const attrName = match[1];
-    const attrValue = match[2].trim();
-    attributes.push({ name: attrName, value: attrValue });
+  
+  // Try to match attribute name and equals sign
+  const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*/);
+  if (nameMatch) {
+    const attrName = nameMatch[1];
+    const afterEquals = trimmed.slice(nameMatch[0].length);
+    
+    if (afterEquals.length === 0) {
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Attribute ${attrName} missing value`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    }
+    
+    // Extract the quoted value
+    const quoteChar = afterEquals[0];
+    if (quoteChar === '"' || quoteChar === "'") {
+      let i = 1;
+      let value = "";
+      let escaped = false;
+      
+      while (i < afterEquals.length) {
+        const char = afterEquals[i];
+        
+        if (escaped) {
+          value += char;
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === quoteChar) {
+          // Found the closing quote
+          attributes.push({ name: attrName, value: quoteChar + value + quoteChar });
+          // Return remaining text after this attribute
+          return afterEquals.slice(i + 1).trim();
+        } else {
+          value += char;
+        }
+        i++;
+      }
+      
+      // Unclosed quote
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Unclosed quote in attribute ${attrName}`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    } else {
+      // Unquoted value - take everything until space or end
+      const unquotedMatch = afterEquals.match(/^(\S+)/);
+      if (unquotedMatch) {
+        attributes.push({ name: attrName, value: unquotedMatch[1] });
+        return afterEquals.slice(unquotedMatch[1].length).trim();
+      }
+      return "";
+    }
   } else {
     // Boolean attribute
-    const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)$/);
-    if (nameMatch) {
-      attributes.push({ name: nameMatch[1], value: null });
+    const boolMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)(\s+.*)?$/);
+    if (boolMatch) {
+      attributes.push({ name: boolMatch[1], value: null });
+      return boolMatch[2] ? boolMatch[2].trim() : "";
     } else {
       pushDiag(
         diagnostics,
@@ -1447,6 +1818,7 @@ function parseAndAddAttribute(
         column,
         lineOffset
       );
+      return "";
     }
   }
 }

@@ -1,0 +1,8 @@
+props
+  name: string
+
+div.welcome-card
+  h1 Hello, {name}! 👋
+  p Collie templates compile directly to React components.
+  button.primary(onClick={() => alert("Have fun!")})
+    Let's build
