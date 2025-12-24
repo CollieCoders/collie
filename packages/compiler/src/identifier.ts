@@ -8,11 +8,13 @@ export function normalizeIdentifierValue(value: string | undefined | null): stri
   if (!trimmed) {
     return undefined;
   }
-  if (trimmed.endsWith(COLLIE_SUFFIX)) {
-    const withoutSuffix = trimmed.slice(0, -COLLIE_SUFFIX.length).trimEnd();
-    return withoutSuffix ? withoutSuffix : undefined;
+
+  let normalized = trimmed;
+  if (normalized.endsWith(COLLIE_SUFFIX)) {
+    normalized = normalized.slice(0, -COLLIE_SUFFIX.length).trim();
   }
-  return trimmed;
+
+  return normalized ? normalized : undefined;
 }
 
 export function hasWhitespace(value: string): boolean {

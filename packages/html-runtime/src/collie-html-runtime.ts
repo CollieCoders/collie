@@ -92,7 +92,7 @@ async function loadAndInjectPartial(
   if (!url) return;
 
   try {
-    const response = await fetch(url, { credentials: "same-origin" });
+    const response = await fetch(url, { credentials: "same-origin", cache: "no-cache" });
     if (!response.ok) {
       console.warn(
         `[CollieHtmlRuntime] Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`

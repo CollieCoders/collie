@@ -75,4 +75,69 @@ div.hero
 );
 assert.equal(colonSyntaxResult.meta?.id, "homeHero", "#id: homeHero should parse correctly");
 
+const bareIdResult = compileToHtml(
+  `
+id homeHero
+div.hero
+  "Hi"
+`.trim(),
+  { filename: "/components/hero.collie" }
+);
+assert.equal(bareIdResult.meta?.id, "homeHero", "id homeHero should match #id behavior");
+assert.equal(bareIdResult.meta?.rawId, "homeHero", "id directive should expose rawId");
+
+const bareEqualsSyntaxResult = compileToHtml(
+  `
+id = homeHero
+div.hero
+  "Hi"
+`.trim(),
+  { filename: "/components/hero.collie" }
+);
+assert.equal(bareEqualsSyntaxResult.meta?.id, "homeHero", "id = homeHero should parse correctly");
+
+const bareColonSyntaxResult = compileToHtml(
+  `
+id: homeHero
+div.hero
+  "Hi"
+`.trim(),
+  { filename: "/components/hero.collie" }
+);
+assert.equal(bareColonSyntaxResult.meta?.id, "homeHero", "id: homeHero should parse correctly");
+
+const bareSuffixedIdResult = compileToHtml(
+  `
+id homeHero-collie
+div.hero
+  "Hi"
+`.trim(),
+  { filename: "/components/hero.collie" }
+);
+assert.equal(bareSuffixedIdResult.meta?.id, "homeHero", "id homeHero-collie should strip the -collie suffix");
+assert.equal(
+  bareSuffixedIdResult.meta?.rawId,
+  "homeHero-collie",
+  "id homeHero-collie should retain the original rawId"
+);
+
+const mixedCaseKeywords = ["id", "Id", "ID", "iD", "#ID", "#Id", "#iD"];
+for (const keyword of mixedCaseKeywords) {
+  const result = compileToHtml(
+    `
+${keyword} heroCase
+div.hero
+  "Hi"
+`.trim(),
+    { filename: "/components/hero.collie" }
+  );
+  assert.deepEqual(
+    result.diagnostics.map((d) => d.code),
+    [],
+    `${keyword} heroCase should not produce diagnostics`
+  );
+  assert.equal(result.meta?.id, "heroCase", `${keyword} heroCase should normalize correctly`);
+  assert.equal(result.meta?.rawId, "heroCase", `${keyword} heroCase should retain the rawId`);
+}
+
 console.log("✅ id directive metadata tests passed.");

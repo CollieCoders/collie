@@ -159,14 +159,14 @@ export function parse(source: string): ParseResult {
       conditionalChains.delete(level);
     }
 
-    const idMatch = trimmed.match(/^#id\b(.*)$/);
+    const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
     if (idMatch) {
       const column = indent + 1;
       if (level !== 0) {
         pushDiag(
           diagnostics,
           "COLLIE701",
-          "#id must appear at the top level before any other directives.",
+          "id directives (#id or id) must appear at the top level before any other directives.",
           lineNumber,
           column,
           lineOffset,
@@ -178,7 +178,7 @@ export function parse(source: string): ParseResult {
         pushDiag(
           diagnostics,
           "COLLIE703",
-          "#id can only appear once per file.",
+          "id can only appear once per file.",
           lineNumber,
           column,
           lineOffset,
@@ -190,7 +190,7 @@ export function parse(source: string): ParseResult {
         pushDiag(
           diagnostics,
           "COLLIE701",
-          "#id must appear before props, classes, @client, or markup.",
+          "id directives must appear before props, classes, @client, or markup.",
           lineNumber,
           column,
           lineOffset,
@@ -198,12 +198,12 @@ export function parse(source: string): ParseResult {
         );
         continue;
       }
-      const remainderRaw = idMatch[1] ?? "";
+      const remainderRaw = idMatch[2] ?? "";
       if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
         pushDiag(
           diagnostics,
           "COLLIE702",
-          "Invalid #id syntax. Use '#id value', '#id = value', or '#id: value'.",
+          "Invalid id directive syntax. Use '#id value', '#id = value', '#id: value', 'id value', 'id = value', or 'id: value'.",
           lineNumber,
           column,
           lineOffset,
@@ -219,7 +219,7 @@ export function parse(source: string): ParseResult {
         pushDiag(
           diagnostics,
           "COLLIE702",
-          "#id must specify an identifier value.",
+          "id directives must specify an identifier value.",
           lineNumber,
           column,
           lineOffset,
@@ -231,7 +231,7 @@ export function parse(source: string): ParseResult {
         pushDiag(
           diagnostics,
           "COLLIE702",
-          "#id value cannot contain whitespace.",
+          "id values cannot contain whitespace.",
           lineNumber,
           column,
           lineOffset,
@@ -244,7 +244,7 @@ export function parse(source: string): ParseResult {
         pushDiag(
           diagnostics,
           "COLLIE702",
-          "#id value must include characters other than the '-collie' suffix.",
+          "id values must include characters other than the '-collie' suffix.",
           lineNumber,
           column,
           lineOffset,

@@ -71,7 +71,9 @@ export interface TsxCompileOptions extends BaseCompileOptions {
   jsxRuntime?: "classic" | "automatic";
 }
 
-export interface HtmlCompileOptions extends BaseCompileOptions {}
+export interface HtmlCompileOptions extends BaseCompileOptions {
+  pretty?: boolean;
+}
 
 export interface CollieCompileMeta {
   id?: string;
