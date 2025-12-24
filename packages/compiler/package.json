@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/compiler",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Collie compiler core (parser + diagnostics + TSX codegen).",
   "license": "MIT",
   "type": "module",
