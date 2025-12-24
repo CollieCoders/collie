@@ -10,5 +10,13 @@ export default defineConfig({
   target: "es2022",
   banner: {
     js: "#!/usr/bin/env node"
-  }
+  },
+  // Externalize all dependencies to keep them in node_modules
+  // This prevents bundling TypeScript and other large dependencies
+  external: [
+    // Node built-ins
+    /^node:/,
+    // All npm packages
+    /^[^.\/]/
+  ]
 });
