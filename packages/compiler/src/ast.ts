@@ -16,6 +16,8 @@ export interface RootNode {
   props?: PropsDecl;
   classAliases?: ClassAliasesDecl;
   clientComponent?: boolean;
+  id?: string;
+  rawId?: string;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode | ForNode | ComponentNode | JSXPassthroughNode;

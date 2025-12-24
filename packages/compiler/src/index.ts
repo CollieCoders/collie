@@ -1,9 +1,29 @@
+import path from "node:path";
 import { generateModule } from "./codegen";
 import { generateHtml } from "./html-codegen";
+import { normalizeIdentifierValue } from "./identifier";
 import { parse } from "./parser";
 import type { ParseResult } from "./parser";
 import type { Diagnostic } from "./diagnostics";
 import type { RootNode } from "./ast";
+
+export type {
+  CollieConfig,
+  CollieProjectConfig,
+  CollieCompilerOptions,
+  CollieFeatureOptions,
+  CollieEditorOptions,
+  HtmlProjectOptions,
+  ReactProjectOptions,
+  NormalizedCollieConfig,
+  NormalizedCollieProjectConfig
+} from "@collie-lang/config";
+export {
+  defineConfig,
+  loadConfig,
+  loadAndNormalizeConfig,
+  normalizeConfig
+} from "@collie-lang/config";
 
 export type {
   Diagnostic,
@@ -51,12 +71,21 @@ export interface TsxCompileOptions extends BaseCompileOptions {
   jsxRuntime?: "classic" | "automatic";
 }
 
-export interface HtmlCompileOptions extends BaseCompileOptions {}
+export interface HtmlCompileOptions extends BaseCompileOptions {
+  pretty?: boolean;
+}
+
+export interface CollieCompileMeta {
+  id?: string;
+  rawId?: string;
+  filename?: string;
+}
 
 export interface CompileResult {
   code: string;
   map?: any;
   diagnostics: Diagnostic[];
+  meta?: CollieCompileMeta;
 }
 
 export type CollieDocument = ParseResult;
@@ -84,7 +113,8 @@ export function compileToJsx(
     code = generateModule(document.root, { componentName, jsxRuntime, flavor: "jsx" });
   }
 
-  return { code, diagnostics, map: undefined };
+  const meta = buildCompileMeta(document, options.filename);
+  return { code, diagnostics, map: undefined, meta };
 }
 
 export function compileToTsx(
@@ -101,7 +131,8 @@ export function compileToTsx(
     code = generateModule(document.root, { componentName, jsxRuntime, flavor: "tsx" });
   }
 
-  return { code, diagnostics, map: undefined };
+  const meta = buildCompileMeta(document, options.filename);
+  return { code, diagnostics, map: undefined, meta };
 }
 
 export function compileToHtml(
@@ -116,7 +147,8 @@ export function compileToHtml(
     code = generateHtml(document.root);
   }
 
-  return { code, diagnostics, map: undefined };
+  const meta = buildCompileMeta(document, options.filename);
+  return { code, diagnostics, map: undefined, meta };
 }
 
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
@@ -178,6 +210,32 @@ function createStubComponent(name: string, flavor: "jsx" | "tsx"): string {
 
 function createStubHtml(): string {
   return "";
+}
+
+function buildCompileMeta(document: CollieDocument, filename?: string): CollieCompileMeta | undefined {
+  const meta: CollieCompileMeta = {};
+  if (filename) {
+    meta.filename = filename;
+  }
+  if (document.root.rawId) {
+    meta.rawId = document.root.rawId;
+  }
+
+  const directiveId = document.root.id;
+  const fallbackId = directiveId ?? deriveIdentifierFromFilename(filename);
+  if (fallbackId) {
+    meta.id = fallbackId;
+  }
+
+  return meta.id || meta.rawId || meta.filename ? meta : undefined;
+}
+
+function deriveIdentifierFromFilename(filename?: string): string | undefined {
+  if (!filename) {
+    return undefined;
+  }
+  const basename = path.basename(filename, ".collie");
+  return normalizeIdentifierValue(basename);
 }
 
 function attachFilename(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {

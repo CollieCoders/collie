@@ -16,6 +16,7 @@ import type {
   TextNode
 } from "./ast";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
+import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
 
 export interface ParseResult {
   root: RootNode;
@@ -72,6 +73,7 @@ export function parse(source: string): ParseResult {
   let propsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
+  let sawNonIdTopLevelDirective = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
@@ -157,6 +159,104 @@ export function parse(source: string): ParseResult {
       conditionalChains.delete(level);
     }
 
+    const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
+    if (idMatch) {
+      const column = indent + 1;
+      if (level !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "id directives (#id or id) must appear at the top level before any other directives.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (root.rawId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE703",
+          "id can only appear once per file.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (sawTopLevelTemplateNode || sawNonIdTopLevelDirective) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "id directives must appear before props, classes, @client, or markup.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const remainderRaw = idMatch[2] ?? "";
+      if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "Invalid id directive syntax. Use '#id value', '#id = value', '#id: value', 'id value', 'id = value', or 'id: value'.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      let valuePart = remainderRaw.trim();
+      if (valuePart.startsWith("=") || valuePart.startsWith(":")) {
+        valuePart = valuePart.slice(1).trim();
+      }
+      if (!valuePart) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id directives must specify an identifier value.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      if (hasWhitespace(valuePart)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id values cannot contain whitespace.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      const normalizedId = normalizeIdentifierValue(valuePart);
+      if (!normalizedId) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "id values must include characters other than the '-collie' suffix.",
+          lineNumber,
+          column,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+      root.rawId = valuePart;
+      root.id = normalizedId;
+      continue;
+    }
+
     if (trimmed === "classes") {
       if (level !== 0) {
         pushDiag(
@@ -183,6 +283,7 @@ export function parse(source: string): ParseResult {
           root.classAliases = { aliases: [] };
         }
         classesBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -211,6 +312,7 @@ export function parse(source: string): ParseResult {
       } else {
         root.props = { fields: [] };
         propsBlockLevel = level;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -248,6 +350,7 @@ export function parse(source: string): ParseResult {
         );
       } else {
         root.clientComponent = true;
+        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -314,6 +417,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, forNode);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       stack.push({ node: forNode, level });
       continue;
@@ -337,6 +441,7 @@ export function parse(source: string): ParseResult {
       addChildToParent(parent, chain);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
+        sawNonIdTopLevelDirective = true;
       }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
@@ -581,6 +686,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
         continue;
       }
@@ -590,6 +696,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -601,6 +708,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -612,6 +720,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, exprNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -642,6 +751,7 @@ export function parse(source: string): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
+          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -650,6 +760,7 @@ export function parse(source: string): ParseResult {
     addChildToParent(parent, element);
     if (parent === root) {
       sawTopLevelTemplateNode = true;
+      sawNonIdTopLevelDirective = true;
     }
     stack.push({ node: element, level });
   }
@@ -1589,7 +1700,11 @@ function parseAttributes(
       // This is a new attribute
       if (currentAttr) {
         // Parse the previous attribute
-        parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        // Process any remaining attributes from the previous line
+        while (remaining) {
+          remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+        }
         currentAttr = "";
       }
       currentAttr = trimmedLine;
@@ -1604,9 +1719,12 @@ function parseAttributes(
     }
   }
 
-  // Parse the last attribute
+  // Parse the last attribute and any remaining inline attributes
   if (currentAttr) {
-    parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    while (remaining) {
+      remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+    }
   }
 
   return { attributes, endIndex: cursor };
@@ -1619,18 +1737,78 @@ function parseAndAddAttribute(
   lineNumber: number,
   column: number,
   lineOffset: number
-): void {
+): string {
   const trimmed = attrStr.trim();
-  const match = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.+)$/s);
-  if (match) {
-    const attrName = match[1];
-    const attrValue = match[2].trim();
-    attributes.push({ name: attrName, value: attrValue });
+  
+  // Try to match attribute name and equals sign
+  const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*/);
+  if (nameMatch) {
+    const attrName = nameMatch[1];
+    const afterEquals = trimmed.slice(nameMatch[0].length);
+    
+    if (afterEquals.length === 0) {
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Attribute ${attrName} missing value`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    }
+    
+    // Extract the quoted value
+    const quoteChar = afterEquals[0];
+    if (quoteChar === '"' || quoteChar === "'") {
+      let i = 1;
+      let value = "";
+      let escaped = false;
+      
+      while (i < afterEquals.length) {
+        const char = afterEquals[i];
+        
+        if (escaped) {
+          value += char;
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === quoteChar) {
+          // Found the closing quote
+          attributes.push({ name: attrName, value: quoteChar + value + quoteChar });
+          // Return remaining text after this attribute
+          return afterEquals.slice(i + 1).trim();
+        } else {
+          value += char;
+        }
+        i++;
+      }
+      
+      // Unclosed quote
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Unclosed quote in attribute ${attrName}`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    } else {
+      // Unquoted value - take everything until space or end
+      const unquotedMatch = afterEquals.match(/^(\S+)/);
+      if (unquotedMatch) {
+        attributes.push({ name: attrName, value: unquotedMatch[1] });
+        return afterEquals.slice(unquotedMatch[1].length).trim();
+      }
+      return "";
+    }
   } else {
     // Boolean attribute
-    const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)$/);
-    if (nameMatch) {
-      attributes.push({ name: nameMatch[1], value: null });
+    const boolMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)(\s+.*)?$/);
+    if (boolMatch) {
+      attributes.push({ name: boolMatch[1], value: null });
+      return boolMatch[2] ? boolMatch[2].trim() : "";
     } else {
       pushDiag(
         diagnostics,
@@ -1640,6 +1818,7 @@ function parseAndAddAttribute(
         column,
         lineOffset
       );
+      return "";
     }
   }
 }
