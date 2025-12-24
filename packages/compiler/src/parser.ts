@@ -1700,7 +1700,11 @@ function parseAttributes(
       // This is a new attribute
       if (currentAttr) {
         // Parse the previous attribute
-        parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+        // Process any remaining attributes from the previous line
+        while (remaining) {
+          remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+        }
         currentAttr = "";
       }
       currentAttr = trimmedLine;
@@ -1715,9 +1719,12 @@ function parseAttributes(
     }
   }
 
-  // Parse the last attribute
+  // Parse the last attribute and any remaining inline attributes
   if (currentAttr) {
-    parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    let remaining = parseAndAddAttribute(currentAttr, attributes, diagnostics, lineNumber, column, lineOffset);
+    while (remaining) {
+      remaining = parseAndAddAttribute(remaining, attributes, diagnostics, lineNumber, column, lineOffset);
+    }
   }
 
   return { attributes, endIndex: cursor };
@@ -1730,18 +1737,78 @@ function parseAndAddAttribute(
   lineNumber: number,
   column: number,
   lineOffset: number
-): void {
+): string {
   const trimmed = attrStr.trim();
-  const match = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.+)$/s);
-  if (match) {
-    const attrName = match[1];
-    const attrValue = match[2].trim();
-    attributes.push({ name: attrName, value: attrValue });
+  
+  // Try to match attribute name and equals sign
+  const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*/);
+  if (nameMatch) {
+    const attrName = nameMatch[1];
+    const afterEquals = trimmed.slice(nameMatch[0].length);
+    
+    if (afterEquals.length === 0) {
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Attribute ${attrName} missing value`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    }
+    
+    // Extract the quoted value
+    const quoteChar = afterEquals[0];
+    if (quoteChar === '"' || quoteChar === "'") {
+      let i = 1;
+      let value = "";
+      let escaped = false;
+      
+      while (i < afterEquals.length) {
+        const char = afterEquals[i];
+        
+        if (escaped) {
+          value += char;
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === quoteChar) {
+          // Found the closing quote
+          attributes.push({ name: attrName, value: quoteChar + value + quoteChar });
+          // Return remaining text after this attribute
+          return afterEquals.slice(i + 1).trim();
+        } else {
+          value += char;
+        }
+        i++;
+      }
+      
+      // Unclosed quote
+      pushDiag(
+        diagnostics,
+        "COLLIE004",
+        `Unclosed quote in attribute ${attrName}`,
+        lineNumber,
+        column,
+        lineOffset
+      );
+      return "";
+    } else {
+      // Unquoted value - take everything until space or end
+      const unquotedMatch = afterEquals.match(/^(\S+)/);
+      if (unquotedMatch) {
+        attributes.push({ name: attrName, value: unquotedMatch[1] });
+        return afterEquals.slice(unquotedMatch[1].length).trim();
+      }
+      return "";
+    }
   } else {
     // Boolean attribute
-    const nameMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)$/);
-    if (nameMatch) {
-      attributes.push({ name: nameMatch[1], value: null });
+    const boolMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)(\s+.*)?$/);
+    if (boolMatch) {
+      attributes.push({ name: boolMatch[1], value: null });
+      return boolMatch[2] ? boolMatch[2].trim() : "";
     } else {
       pushDiag(
         diagnostics,
@@ -1751,6 +1818,7 @@ function parseAndAddAttribute(
         column,
         lineOffset
       );
+      return "";
     }
   }
 }

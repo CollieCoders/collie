@@ -11,6 +11,15 @@ export interface HtmlCodegenOptions {
   indent?: string;
 }
 
+// Attribute rendering overview:
+// - renderAttributes flattens classes and AST-provided attributes into `name="value"` strings.
+// - extractStaticAttributeValue peels the literal text from the parser's raw attribute field and hands it to
+//   escapeHtmlAttribute so that &, <, >, and " inside the value are safely encoded.
+// - When inline attributes were parsed as a single chunk (e.g. `src="/foo" alt="bar"`), the chunk's closing quote
+//   was treated as part of the literal, causing escapeHtmlAttribute to turn the boundary `"` into `&quot;` and break
+//   subsequent attributes. The logic below isolates the raw value and feeds any leftover attribute text back through
+//   the same renderer so only the actual attribute contents are escaped.
+
 /**
  * HTML emitter currently supports only static markup; dynamic expressions and control flow will be added later.
  */
