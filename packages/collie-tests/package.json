@@ -1,0 +1,24 @@
+{
+  "name": "@collie-lang/collie-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scaffolding for Collie CLI + TypeScript harness tests.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cli": "vitest run src/tests/cli"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "execa": "^9.4.0",
+    "fs-extra": "^11.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "strip-ansi": "^7.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^1.6.0"
+  }
+}

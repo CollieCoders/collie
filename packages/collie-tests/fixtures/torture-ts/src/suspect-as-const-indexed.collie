@@ -1,0 +1,2 @@
+const palette = ['red', 'blue', 'green'] as const;
+const firstColor = typeof palette[number];

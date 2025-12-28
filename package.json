@@ -13,8 +13,11 @@
     "publish-packages": "changeset publish",
     "prepare:cdn": "pnpm --filter @collie-lang/html-runtime prepare-cdn",
     "release:cdn": "pnpm --filter @collie-lang/html-runtime release:cdn",
-    "test": "pnpm -r --filter='@collie-lang/*' test && vitest run tests",
-    "test:integration": "vitest run tests"
+    "test": "pnpm -r --filter='@collie-lang/*' test && pnpm -C packages/collie-tests test",
+    "test:collie": "pnpm -C packages/collie-tests test",
+    "test:cli": "pnpm -C packages/collie-tests test:cli",
+    "test:integration": "pnpm -C packages/collie-tests test",
+    "test:watch": "pnpm -C packages/collie-tests test:watch"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",

@@ -1,0 +1,1 @@
+type Route<TPath extends string> = TPath extends `${'/' | './'}${infer Rest}` ? Rest : never;
