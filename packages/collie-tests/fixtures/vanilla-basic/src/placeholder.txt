@@ -1,1 +1,0 @@
-This file marks the vanilla Collie template source directory. Real .collie files will be added later.

@@ -1,9 +1,18 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createTempProject } from '../../harness/tempProject.js';
+import { runCollieCli } from '../../harness/runCli.js';
 
-// TODO: Validate CLI error messaging once parser hooks exist.
-describe.skip('collie CLI invalid syntax handling', () => {
+describe('collie CLI invalid syntax handling', () => {
   it('reports syntax failures for malformed fixtures', async () => {
-    await createTempProject({ fixtureName: 'invalid-syntax' });
+    const project = await createTempProject({ fixtureName: 'invalid-syntax' });
+
+    const result = await runCollieCli(
+      ['check', 'src/invalid.collie', '--format', 'text'],
+      { cwd: project.rootDir }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.normalizedStderr).toMatch(/invalid/i);
+    expect(result.normalizedStderr).toMatch(/error/i);
   });
 });
