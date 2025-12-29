@@ -31,6 +31,6 @@ export const typecheckWithTsconfig = (options: TypecheckOptions): TypecheckResul
 
   return {
     program,
-    diagnostics: ts.getPreEmitDiagnostics(program)
+    diagnostics: [...(parsed.errors ?? []), ...ts.getPreEmitDiagnostics(program)]
   };
 };

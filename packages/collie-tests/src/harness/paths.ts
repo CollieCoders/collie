@@ -7,4 +7,5 @@ export const packageRoot = resolve(moduleDir, '..', '..');
 export const repoRoot = resolve(packageRoot, '..', '..');
 export const fixturesDir = resolve(packageRoot, 'fixtures');
 export const testsDir = resolve(packageRoot, 'src', 'tests');
-export const cliBinPath = resolve(repoRoot, 'packages', 'cli', 'dist', 'index.js');
+export const cliPackageDir = resolve(repoRoot, 'packages', 'cli');
+export const cliPackageJsonPath = resolve(cliPackageDir, 'package.json');

@@ -1,6 +1,8 @@
-import stripAnsi from 'strip-ansi';
+import stripAnsiModule from 'strip-ansi';
 
-export const normalizeLineEndings = (value: string): string => value.replace(/\r\n/g, '\n');
+export const stripAnsi = (value: string): string => stripAnsiModule(value ?? '');
 
-export const normalizeOutput = (value: string): string =>
-  normalizeLineEndings(stripAnsi(value ?? '')).trim();
+export const normalizeNewlines = (value: string): string => value.replace(/\r\n/g, '\n');
+
+export const normalizeCliOutput = (value: string): string =>
+  normalizeNewlines(stripAnsi(value ?? '')).trim();

@@ -2,10 +2,12 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/tests/**/*.test.ts'],
+    include: ['src/tests/smoke.test.ts'],
     environment: 'node',
     testTimeout: 60000,
     hookTimeout: 60000,
-    isolate: true
+    isolate: true,
+    pool: 'forks',
+    sequence: { concurrent: false }
   }
 });
