@@ -1,0 +1,16 @@
+props
+  name: string = "Friend"
+  isActive: boolean = true
+
+
+
+div class="outer"   
+  h1   class="title"  
+    Welcome {{   name}}  
+
+  p
+    This line has   extra   spaces.
+
+  p  
+    Another line  
+    with uneven indent
