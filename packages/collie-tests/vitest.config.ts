@@ -12,7 +12,11 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/tests/smoke.test.ts', 'src/tests/cli/**/*.test.ts'],
+    include: [
+      'src/tests/smoke.test.ts',
+      'src/tests/cli/**/*.test.ts',
+      'src/tests/integrations/**/*.test.ts'
+    ],
     environment: 'node',
     testTimeout: 60000,
     hookTimeout: 60000,
