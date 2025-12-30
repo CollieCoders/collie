@@ -1,1 +1,3 @@
-! This is intentionally invalid Collie markup so that parser errors can be surfaced later.
+#id =
+div
+  span hello
