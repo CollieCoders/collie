@@ -17,6 +17,7 @@ import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import type { NextDirectoryInfo } from "./nextjs-setup";
 import { convertFile } from "./converter";
 import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
+import { formatDiagnosticLine, printSummary } from "./output";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
@@ -63,7 +64,7 @@ async function main() {
       await runFormat(args.slice(1));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(pc.red(`[collie] ${message}`));
+      printCliError(message);
       process.exit(1);
     }
     return;
@@ -100,13 +101,10 @@ async function main() {
     if (result.errorCount > 0) {
       process.exitCode = 1;
     } else if (maxWarnings >= 0 && result.warningCount > maxWarnings) {
-      console.error(
-        pc.red(
-          `Exceeded maximum warnings: ${result.warningCount} warning${
-            result.warningCount === 1 ? "" : "s"
-          } (limit ${maxWarnings})`
-        )
+      printCliError(
+        `Exceeded maximum warnings: ${result.warningCount} warning${result.warningCount === 1 ? "" : "s"} (limit ${maxWarnings})`
       );
+      console.error(pc.dim("Next: fix warnings or raise --max-warnings."));
       process.exitCode = 1;
     }
     return;
@@ -172,18 +170,21 @@ async function main() {
     });
 
     if (!files.length) {
-      console.log(pc.yellow("No files matched the provided patterns."));
+      printSummary("warning", "No files matched the provided patterns", undefined, "check the paths and try again");
       return;
     }
     files.sort();
 
     const options = { write, overwrite, removeOriginal };
+    let converted = 0;
+    let failed = 0;
     for (const file of files) {
       try {
         const result = await convertFile(file, options);
         if (write) {
           const target = result.outputPath ?? file.replace(/\.[tj]sx?$/, ".collie");
           console.log(pc.green(`✔ Converted ${file} → ${target}`));
+          converted++;
         } else {
           console.log(pc.gray(`// Converted from ${file}\n`));
           process.stdout.write(result.collie);
@@ -199,6 +200,28 @@ async function main() {
         const message = error instanceof Error ? error.message : String(error);
         console.error(pc.red(`✖ Failed to convert ${file}: ${message}`));
         process.exitCode = 1;
+        failed++;
+      }
+    }
+    if (write) {
+      if (failed === 0) {
+        printSummary(
+          "success",
+          `Converted ${converted} file${converted === 1 ? "" : "s"}`,
+          `wrote ${converted} .collie file${converted === 1 ? "" : "s"}`,
+          "review the generated templates or run collie check"
+        );
+      } else {
+        const changeDetail =
+          converted > 0
+            ? `wrote ${converted} .collie file${converted === 1 ? "" : "s"} before failing`
+            : undefined;
+        printSummary(
+          "error",
+          `Converted ${converted} file${converted === 1 ? "" : "s"} with ${failed} failure${failed === 1 ? "" : "s"}`,
+          changeDetail,
+          "fix the errors above and rerun collie convert"
+        );
       }
     }
     return;
@@ -211,7 +234,8 @@ async function main() {
     const results = await runDoctor({ cwd: process.cwd() });
     const filtered = filterDiagnostics(results, subsystem);
     if (subsystem && filtered.length === 0) {
-      console.error(pc.red(`Unknown subsystem for --check: ${subsystem}`));
+      printCliError(`Unknown subsystem for --check: ${subsystem}`);
+      console.error(pc.dim("Next: run collie doctor to list available checks."));
       process.exit(1);
     }
     if (jsonOutput) {
@@ -340,28 +364,31 @@ async function main() {
       await runInit(initOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(pc.red(`[collie] ${message}`));
+      printCliError(message);
       process.exit(1);
     }
     return;
   }
 
-  console.error(pc.red(`Unknown command: ${cmd}`));
+  printCliError(`Unknown command: ${cmd}`);
   process.exit(1);
 }
 
 function printHelp() {
   console.log(`${pc.bold("collie")}
 
+Usage:
+  collie <command> [options]
+
 Commands:
-  collie init     Initialize Collie in Vite or Next.js projects (--nextjs)
-  collie format   Format Collie templates (collie format \"src/**/*.collie\" --write)
-  collie check    Validate Collie templates (collie check \"src/**/*.collie\")
-  collie doctor   Diagnose setup issues (collie doctor --json)
-  collie convert  Convert JSX/TSX to Collie templates (collie convert src/**/*.tsx --write)
-  collie watch    Watch and compile templates (collie watch src --outDir dist)
-  collie build    Compile templates once (collie build src --outDir dist)
-  collie create   Scaffold a new Collie project (use --list-templates to view options)
+  collie build    Compile .collie templates to .tsx
+  collie check    Validate .collie templates
+  collie format   Format .collie templates
+  collie convert  Convert JSX/TSX to .collie templates
+  collie doctor   Diagnose setup issues
+  collie init     Initialize Collie in Vite or Next.js projects
+  collie watch    Watch and compile templates
+  collie create   Scaffold a new Collie project
 `);
 }
 
@@ -742,7 +769,7 @@ async function runFormat(args: string[]): Promise<void> {
   const cwd = process.cwd();
   const files = await fg(patterns, { cwd, onlyFiles: true, unique: true });
   if (!files.length) {
-    console.log(pc.yellow("No files found"));
+    printSummary("warning", "No files matched the provided patterns", undefined, "check the glob and try again");
     return;
   }
 
@@ -757,7 +784,7 @@ async function runFormat(args: string[]): Promise<void> {
       contents = await fs.readFile(file, "utf8");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(pc.red(`[collie] Failed to read ${file}: ${message}`));
+      console.error(pc.red(`✖ Failed to read ${file}: ${message}`));
       failures++;
       continue;
     }
@@ -767,7 +794,7 @@ async function runFormat(args: string[]): Promise<void> {
       result = formatSource(contents, { indent });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(pc.red(`[collie] Failed to format ${file}: ${message}`));
+      console.error(pc.red(`✖ Failed to format ${file}: ${message}`));
       failures++;
       continue;
     }
@@ -786,10 +813,10 @@ async function runFormat(args: string[]): Promise<void> {
 
     if (flags.check) {
       if (changed) {
-        console.log(pc.red(`${file} needs formatting`));
+        console.log(pc.red(`✖ ${file} needs formatting`));
         needsFormatting++;
       } else {
-        console.log(pc.green(`${file} is formatted`));
+        console.log(pc.green(`✔ ${file} is formatted`));
       }
       continue;
     }
@@ -798,9 +825,9 @@ async function runFormat(args: string[]): Promise<void> {
       if (changed) {
         await fs.writeFile(file, result.formatted, "utf8");
         written++;
-        console.log(pc.green(`Formatted ${file}`));
+        console.log(pc.green(`✔ Formatted ${file}`));
       } else {
-        console.log(pc.dim(`${file} already formatted`));
+        console.log(pc.dim(`- ${file} already formatted`));
       }
       continue;
     }
@@ -812,14 +839,45 @@ async function runFormat(args: string[]): Promise<void> {
 
   if (flags.check) {
     if (needsFormatting > 0) {
-      console.log(pc.red(`\n✖ ${needsFormatting} file${needsFormatting === 1 ? "" : "s"} need formatting`));
+      console.log("");
+      printSummary(
+        "error",
+        `${needsFormatting} file${needsFormatting === 1 ? "" : "s"} need formatting`,
+        "no files changed"
+      );
       console.log(pc.dim("Run: collie format --write to fix"));
       process.exitCode = 1;
+    } else if (failures > 0) {
+      printSummary(
+        "error",
+        `Failed to check ${failures} file${failures === 1 ? "" : "s"}`,
+        "no files changed",
+        "resolve the errors above and rerun collie format --check"
+      );
     } else {
-      console.log(pc.green("All files formatted"));
+      printSummary(
+        "success",
+        `All ${files.length} file${files.length === 1 ? "" : "s"} formatted`,
+        "no files changed",
+        "run collie build when you are ready to compile"
+      );
     }
   } else if (flags.write) {
-    console.log(pc.green(`Formatted ${written} file${written === 1 ? "" : "s"}`));
+    if (failures > 0) {
+      printSummary(
+        "error",
+        `Formatted ${written} file${written === 1 ? "" : "s"} with ${failures} failure${failures === 1 ? "" : "s"}`,
+        `wrote ${written} file${written === 1 ? "" : "s"} to disk`,
+        "fix the errors above and rerun collie format --write"
+      );
+    } else {
+      printSummary(
+        "success",
+        `Formatted ${written} file${written === 1 ? "" : "s"}`,
+        `wrote ${written} file${written === 1 ? "" : "s"} to disk`,
+        "review the changes or run collie check"
+      );
+    }
   }
 
   if (failures > 0) {
@@ -873,10 +931,7 @@ function parseFormatArgs(args: string[]): { patterns: string[]; flags: FormatFla
 
 function printDiagnostics(file: string, diagnostics: Diagnostic[]): void {
   for (const diag of diagnostics) {
-    const location = diag.span ? `${diag.span.start.line}:${diag.span.start.col}` : "";
-    const prefix = location ? `${file}:${location}` : file;
-    const codeSuffix = diag.code ? ` (${diag.code})` : "";
-    const message = `${prefix} ${diag.message}${codeSuffix}`;
+    const message = formatDiagnosticLine({ ...diag, file }, file);
     if (diag.severity === "warning") {
       console.warn(pc.yellow(message));
     } else {
@@ -935,7 +990,11 @@ function validateFormatFlag(value: string): "text" | "json" {
   throw new Error('Invalid --format flag. Use "text" or "json".');
 }
 
+function printCliError(message: string): void {
+  console.error(pc.red(`✖ ${message}`));
+}
+
 main().catch((error) => {
-  console.error(pc.red(error instanceof Error ? error.message : String(error)));
+  printCliError(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
