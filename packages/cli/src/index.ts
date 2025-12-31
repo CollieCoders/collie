@@ -21,6 +21,7 @@ import { formatDiagnosticLine, printSummary } from "./output";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
+type CollieProjectType = "react-vite" | "react-next" | "react-generic" | "html";
 
 interface InitOptions {
   framework?: Framework;
@@ -31,6 +32,13 @@ interface InitOptions {
 }
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
+const COLLIE_CONFIG_FILES = [
+  "collie.config.ts",
+  "collie.config.js",
+  "collie.config.mjs",
+  "collie.config.cjs",
+  "collie.config.json"
+] as const;
 const CLI_PACKAGE_INFO = readCliPackageInfo();
 const CLI_PACKAGE_VERSION = CLI_PACKAGE_INFO.version;
 const CLI_DEPENDENCY_SPECS = CLI_PACKAGE_INFO.dependencies;
@@ -386,7 +394,7 @@ Commands:
   collie format   Format .collie templates
   collie convert  Convert JSX/TSX to .collie templates
   collie doctor   Diagnose setup issues
-  collie init     Initialize Collie in Vite or Next.js projects
+  collie init     Create a minimal Collie config (no wiring)
   collie watch    Watch and compile templates
   collie create   Scaffold a new Collie project
 `);
@@ -397,41 +405,47 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   const packageJson = await readProjectPackage(projectRoot);
   const detectedFramework = packageJson ? detectFrameworkFromPackage(packageJson) : null;
 
-  let framework = options.framework ?? detectedFramework;
-  if (!framework) {
-    framework = await promptFramework();
+  const framework = options.framework ?? detectedFramework;
+  const projectType = framework ? mapFrameworkToProjectType(framework) : await promptProjectType();
+
+  const existingConfig = findExistingCollieConfig(projectRoot);
+  const targetPath = existingConfig ?? path.join(projectRoot, "collie.config.js");
+  const relativeTarget = path.relative(projectRoot, targetPath) || path.basename(targetPath);
+
+  console.log(pc.bold("collie init"));
+  console.log(pc.dim("This creates a minimal Collie config only."));
+  console.log(pc.dim("It does not install dependencies or wire your framework."));
+  if (framework) {
+    console.log(pc.dim(`Detected ${formatFrameworkLabel(framework)} project.`));
+  } else {
+    console.log(pc.dim("No framework detected."));
   }
+  console.log(pc.dim(`Project type: ${describeProjectType(projectType)}.`));
+  console.log("");
 
-  if (framework === "nextjs") {
-    if (!packageJson) {
-      throw new Error("package.json not found. Run this inside a Next.js project.");
-    }
-    if (!hasNextDependency(packageJson)) {
-      throw new Error("Not a Next.js project. 'next' not found in package.json");
-    }
-
-    console.log(pc.cyan("Detected Next.js project\n"));
-
-    if (options.noInstall) {
-      console.log(
-        pc.yellow("Skipping dependency installation (--no-install). Install @collie-lang/next manually.")
-      );
-    } else {
-      const packageManager = detectPackageManager(projectRoot);
-      console.log(pc.cyan(`Installing @collie-lang/next with ${packageManager}...`));
-      await installDevDependencies(packageManager, projectRoot, [COLLIE_NEXT_DEPENDENCY]);
-      console.log(pc.green("✔ Installed @collie-lang/next"));
-    }
-
-    const nextDirectory = await setupNextJs(projectRoot, {
-      skipDetectionLog: true,
-      collieNextVersion: COLLIE_NEXT_VERSION_RANGE
-    });
-    printNextJsInstructions(nextDirectory);
+  const confirmMessage = existingConfig
+    ? `${relativeTarget} already exists. Replace it with a minimal config?`
+    : `Create ${relativeTarget}?`;
+  const shouldWrite = await promptForConfirmation(confirmMessage, !existingConfig);
+  if (!shouldWrite) {
+    const detail = existingConfig ? `left ${relativeTarget} unchanged` : "no files created";
+    printSummary("warning", "No changes made", detail, "run collie init when you are ready");
     return;
   }
 
-  await initViteProject();
+  const contents = buildInitConfig(projectType, path.extname(targetPath).toLowerCase());
+  await fs.writeFile(targetPath, contents, "utf8");
+
+  printSummary(
+    "success",
+    "Initialized Collie config",
+    `created ${relativeTarget}`,
+    "review the config and run collie check"
+  );
+  console.log(pc.dim("Not wired: no dependencies were installed and no framework config changes were made."));
+  if (!framework) {
+    console.log(pc.dim(`Tip: update the project type in ${relativeTarget} if needed.`));
+  }
 }
 
 async function readProjectPackage(projectRoot: string): Promise<Record<string, any> | null> {
@@ -453,56 +467,88 @@ function detectFrameworkFromPackage(pkg: Record<string, any>): Framework | null 
   return null;
 }
 
-async function promptFramework(): Promise<Framework> {
+function mapFrameworkToProjectType(framework: Framework): CollieProjectType {
+  return framework === "nextjs" ? "react-next" : "react-vite";
+}
+
+function formatFrameworkLabel(framework: Framework): string {
+  return framework === "nextjs" ? "Next.js" : "Vite";
+}
+
+function describeProjectType(projectType: CollieProjectType): string {
+  const labels: Record<CollieProjectType, string> = {
+    "react-vite": "React (Vite)",
+    "react-next": "React (Next.js)",
+    "react-generic": "React (generic)",
+    html: "HTML (no framework)"
+  };
+  return labels[projectType];
+}
+
+function buildInitConfig(projectType: CollieProjectType, ext: string): string {
+  const config = {
+    projects: [
+      {
+        type: projectType,
+        input: "src/**/*.collie"
+      }
+    ]
+  };
+
+  if (ext === ".json") {
+    return `${JSON.stringify(config, null, 2)}\n`;
+  }
+
+  const comment = "// Minimal Collie config. Update the project type or input as needed.\n";
+  const body = JSON.stringify(config, null, 2);
+
+  if (ext === ".mjs" || ext === ".ts") {
+    return `${comment}export default ${body};\n`;
+  }
+
+  return `${comment}module.exports = ${body};\n`;
+}
+
+function findExistingCollieConfig(root: string): string | null {
+  for (const filename of COLLIE_CONFIG_FILES) {
+    const candidate = path.join(root, filename);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function promptForConfirmation(message: string, initial: boolean): Promise<boolean> {
+  const response = await prompts(
+    {
+      type: "confirm",
+      name: "confirmed",
+      message,
+      initial
+    },
+    PROMPT_OPTIONS
+  );
+  return Boolean(response.confirmed);
+}
+
+async function promptProjectType(): Promise<CollieProjectType> {
   const response = await prompts(
     {
       type: "select",
-      name: "framework",
-      message: "Which framework would you like to set up?",
+      name: "projectType",
+      message: "What type of project should this config describe?",
       choices: [
-        { title: "Vite (existing project)", value: "vite" },
-        { title: "Next.js (existing project)", value: "nextjs" }
+        { title: "React (Vite)", value: "react-vite" },
+        { title: "React (Next.js)", value: "react-next" },
+        { title: "React (generic)", value: "react-generic" },
+        { title: "HTML (no framework)", value: "html" }
       ],
       initial: 0
     },
     PROMPT_OPTIONS
   );
-  return response.framework === "nextjs" ? "nextjs" : "vite";
-}
-
-async function initViteProject(): Promise<void> {
-  const projectRoot = process.cwd();
-  const packageJsonPath = path.join(projectRoot, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    throw new Error("package.json not found. Run this inside a Vite+React project.");
-  }
-
-  const pkgJsonRaw = await fs.readFile(packageJsonPath, "utf8");
-  const projectPackage = JSON.parse(pkgJsonRaw);
-  const viteInfo = getViteDependencyInfo(projectPackage);
-
-  const pkgManager = detectPackageManager(projectRoot);
-  console.log(pc.cyan(`Installing dev dependencies with ${pkgManager}...`));
-  await installDevDependencies(pkgManager, projectRoot, COLLIE_DEPENDENCIES);
-
-  const configPath = findViteConfigFile(projectRoot);
-  if (!configPath) {
-    throw new Error(
-      "Could not find a Vite config (vite.config.ts/mts/js/mjs). Add collie() manually to your plugins."
-    );
-  }
-
-  const relativeConfig = path.relative(projectRoot, configPath);
-  console.log(pc.cyan(`Patching ${relativeConfig || path.basename(configPath)}...`));
-  await patchViteConfig(configPath);
-
-  console.log(pc.cyan("Writing src/collie.d.ts..."));
-  await ensureCollieDeclaration(projectRoot);
-
-  maybeWarnAboutViteVersion(viteInfo);
-  printNextSteps(pkgManager, configPath);
-
-  console.log(pc.green("✔ Collie is ready! Add a .collie file and import it in your Vite app."));
+  return (response.projectType as CollieProjectType) ?? "react-generic";
 }
 
 function detectPackageManager(root: string): PackageManager {
