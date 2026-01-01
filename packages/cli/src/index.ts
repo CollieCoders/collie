@@ -22,6 +22,14 @@ import { formatDiagnosticLine, printSummary } from "./output";
 type PackageManager = "pnpm" | "yarn" | "npm";
 type Framework = "vite" | "nextjs";
 type CollieProjectType = "react-vite" | "react-next" | "react-generic" | "html";
+type CssStrategy = "tailwind" | "global" | "unknown";
+type CssDiagnosticLevel = "off" | "warn";
+
+interface CssDetectionResult {
+  strategy: CssStrategy;
+  unknownClass: CssDiagnosticLevel;
+  reasons: string[];
+}
 
 interface InitOptions {
   framework?: Framework;
@@ -32,6 +40,18 @@ interface InitOptions {
 }
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
+const TAILWIND_CONFIG_FILES = [
+  "tailwind.config.js",
+  "tailwind.config.cjs",
+  "tailwind.config.mjs",
+  "tailwind.config.ts"
+] as const;
+const POSTCSS_CONFIG_FILES = [
+  "postcss.config.js",
+  "postcss.config.cjs",
+  "postcss.config.mjs",
+  "postcss.config.ts"
+] as const;
 const COLLIE_CONFIG_FILES = [
   "collie.config.ts",
   "collie.config.js",
@@ -404,6 +424,7 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
   const packageJson = await readProjectPackage(projectRoot);
   const detectedFramework = packageJson ? detectFrameworkFromPackage(packageJson) : null;
+  const cssDetection = await detectCssStrategy(projectRoot, packageJson);
 
   const framework = options.framework ?? detectedFramework;
   const projectType = framework ? mapFrameworkToProjectType(framework) : await promptProjectType();
@@ -420,6 +441,8 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   } else {
     console.log(pc.dim("No framework detected."));
   }
+  console.log(pc.dim(`CSS strategy: ${formatCssDetection(cssDetection)}.`));
+  console.log(pc.dim(`Override in ${relativeTarget} via css.strategy and css.diagnostics.unknownClass.`));
   console.log(pc.dim(`Project type: ${describeProjectType(projectType)}.`));
   console.log("");
 
@@ -433,7 +456,7 @@ async function runInit(options: InitOptions = {}): Promise<void> {
     return;
   }
 
-  const contents = buildInitConfig(projectType, path.extname(targetPath).toLowerCase());
+  const contents = buildInitConfig(projectType, path.extname(targetPath).toLowerCase(), cssDetection);
   await fs.writeFile(targetPath, contents, "utf8");
 
   printSummary(
@@ -485,8 +508,109 @@ function describeProjectType(projectType: CollieProjectType): string {
   return labels[projectType];
 }
 
-function buildInitConfig(projectType: CollieProjectType, ext: string): string {
+async function detectCssStrategy(
+  projectRoot: string,
+  packageJson: Record<string, any> | null
+): Promise<CssDetectionResult> {
+  const reasons: string[] = [];
+
+  try {
+    let tailwindDetected = false;
+    for (const filename of TAILWIND_CONFIG_FILES) {
+      if (existsSync(path.join(projectRoot, filename))) {
+        reasons.push(`${filename} found`);
+        tailwindDetected = true;
+      }
+    }
+
+    if (packageJson && hasTailwindDependency(packageJson)) {
+      reasons.push("package.json includes tailwindcss");
+      tailwindDetected = true;
+    }
+
+    const postcssHit = await scanPostcssForTailwind(projectRoot);
+    if (postcssHit) {
+      reasons.push(`${postcssHit} mentions tailwindcss`);
+      tailwindDetected = true;
+    }
+
+    const cssHit = await scanTopLevelCssForTailwind(projectRoot);
+    if (cssHit) {
+      reasons.push(`${cssHit} contains @tailwind`);
+      tailwindDetected = true;
+    }
+
+    if (tailwindDetected) {
+      return { strategy: "tailwind", unknownClass: "off", reasons };
+    }
+
+    return {
+      strategy: "global",
+      unknownClass: "warn",
+      reasons: ["no Tailwind signals found"]
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      strategy: "unknown",
+      unknownClass: "off",
+      reasons: [`detection error: ${message}`]
+    };
+  }
+}
+
+function formatCssDetection(result: CssDetectionResult): string {
+  const reason = result.reasons.length ? ` (${result.reasons.join(", ")})` : "";
+  const label = result.strategy === "tailwind" ? "Tailwind" : result.strategy === "global" ? "Global CSS" : "Unknown";
+  return `${label}${reason} => unknownClass ${result.unknownClass}`;
+}
+
+function hasTailwindDependency(pkg: Record<string, any>): boolean {
+  return Boolean(
+    (pkg.dependencies && pkg.dependencies.tailwindcss) ||
+      (pkg.devDependencies && pkg.devDependencies.tailwindcss) ||
+      (pkg.peerDependencies && pkg.peerDependencies.tailwindcss)
+  );
+}
+
+async function scanPostcssForTailwind(projectRoot: string): Promise<string | null> {
+  for (const filename of POSTCSS_CONFIG_FILES) {
+    const fullPath = path.join(projectRoot, filename);
+    if (!existsSync(fullPath)) {
+      continue;
+    }
+    const contents = await fs.readFile(fullPath, "utf8");
+    if (contents.includes("tailwindcss")) {
+      return filename;
+    }
+  }
+  return null;
+}
+
+async function scanTopLevelCssForTailwind(projectRoot: string): Promise<string | null> {
+  const files = await fg("*.css", { cwd: projectRoot, onlyFiles: true });
+  for (const filename of files) {
+    const fullPath = path.join(projectRoot, filename);
+    const contents = await fs.readFile(fullPath, "utf8");
+    if (/\@tailwind\s+(base|components|utilities)\b/.test(contents)) {
+      return filename;
+    }
+  }
+  return null;
+}
+
+function buildInitConfig(
+  projectType: CollieProjectType,
+  ext: string,
+  cssDetection: CssDetectionResult
+): string {
   const config = {
+    css: {
+      strategy: cssDetection.strategy,
+      diagnostics: {
+        unknownClass: cssDetection.unknownClass
+      }
+    },
     projects: [
       {
         type: projectType,

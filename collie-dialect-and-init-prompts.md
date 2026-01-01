@@ -49,7 +49,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 * There is a single canonical internal config object used by the compiler pipeline.
 * Invalid config values produce a clear diagnostic/error at config load time (not a crash later).
 
-#### Complete: 0%
+#### Complete: 100%
 
 ### Notes
 
@@ -82,7 +82,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 * Running `collie init` on a non-Tailwind repo yields a config that enables unknown-class diagnostics (warn) by default.
 * Users can edit the values and the compiler uses them.
 
-#### Complete: 0%
+#### Complete: 100%
 
 ### Notes
 
@@ -92,6 +92,8 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 ---
 
 ### Stage 3 — Dialect enforcement for directive tokens (parse-first, enforce-second)
+
+#### Complete: 0%
 
 **Work to do**
 
@@ -126,8 +128,6 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 * Compiler emits correct diagnostics for token spellings based on config.
 * Preferred token quick-fix metadata exists for the extension to use.
 
-#### Complete: 0%
-
 ### Notes
 
 * Keep supported spellings bounded to what Collie already accepts (do not invent arbitrary new tokens).
@@ -136,6 +136,8 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 ---
 
 ### Stage 4 — Props intra-file analysis + diagnostics (no TypeScript cross-file yet)
+
+#### Complete: 0%
 
 **Work to do**
 
@@ -164,8 +166,6 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 * Props diagnostics work purely within one `.collie` file and are stable.
 * No heavy TS program / cross-file analysis in this stage.
 
-#### Complete: 0%
-
 ### Notes
 
 * Be conservative about auto-fixes that could change semantics.
@@ -174,6 +174,8 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 ---
 
 ### Stage 5 — Structured diagnostics output contract (compiler-side)
+
+#### Complete: 0%
 
 **Work to do**
 
@@ -190,8 +192,6 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 * The extension can implement code actions purely from diagnostic payloads (when fix/data is provided).
 * Diagnostics remain stable across versions (codes don’t churn).
 
-#### Complete: 0%
-
 ### Notes
 
 * If you already have an LSP server, align the output with LSP conventions (but keep internal shape stable).
@@ -199,6 +199,8 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 ---
 
 ### Stage 6 — (Optional now, enables later) “Resolved config export” for tooling
+
+#### Complete: 0%
 
 **Work to do**
 
@@ -212,8 +214,6 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 * Extension can query resolved config cheaply (optional integration stage on extension side).
 * If omitted, extension can still read config directly (but this stage improves “enterprise feel”).
-
-#### Complete: 0%
 
 ### Notes
 
