@@ -8,6 +8,7 @@ import { diffLines } from "diff";
 import pc from "picocolors";
 import prompts from "prompts";
 import { formatSource } from "./formatter";
+import { loadAndNormalizeConfig } from "@collie-lang/config";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
@@ -135,6 +136,28 @@ async function main() {
       console.error(pc.dim("Next: fix warnings or raise --max-warnings."));
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (cmd === "config") {
+    const rest = args.slice(1);
+    const shouldPrint = hasFlag(rest, "--print");
+    if (!shouldPrint) {
+      throw new Error('Missing required flag: --print (e.g. "collie config --print").');
+    }
+    const filePath = getFlag(rest, "--file");
+    const cwdFlag = getFlag(rest, "--cwd");
+    const cwd = cwdFlag
+      ? path.resolve(process.cwd(), cwdFlag)
+      : filePath
+        ? path.dirname(path.resolve(process.cwd(), filePath))
+        : process.cwd();
+
+    const normalized = await loadAndNormalizeConfig({ cwd });
+    if (!normalized) {
+      throw new Error(`No Collie config found under ${cwd}.`);
+    }
+    console.log(JSON.stringify(normalized, null, 2));
     return;
   }
 
@@ -411,6 +434,7 @@ Usage:
 Commands:
   collie build    Compile .collie templates to .tsx
   collie check    Validate .collie templates
+  collie config   Print resolved Collie config (json)
   collie format   Format .collie templates
   collie convert  Convert JSX/TSX to .collie templates
   collie doctor   Diagnose setup issues

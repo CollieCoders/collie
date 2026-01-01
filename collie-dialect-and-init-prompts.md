@@ -205,7 +205,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 ### Stage 6 — (Optional now, enables later) “Resolved config export” for tooling
 
-#### Complete: 0%
+#### Complete: 100%
 
 **Work to do**
 
