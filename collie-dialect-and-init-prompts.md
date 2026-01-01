@@ -139,7 +139,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 ### Stage 4 — Props intra-file analysis + diagnostics (no TypeScript cross-file yet)
 
-#### Complete: 0%
+#### Complete: 85%
 
 **Work to do**
 
@@ -172,6 +172,9 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 * Be conservative about auto-fixes that could change semantics.
 * If Collie already has some prop diagnostics, extend/refactor to fit these codes and config-driven severities.
+* Prop usage spans are best-effort (no attribute value spans; template-literal expressions are not parsed).
+* Unused prop diagnostics do not include removal fixes yet.
+* Props diagnostics run only when a normalized `dialect` config is passed into `parseCollie`/`compileTo*`.
 
 ---
 

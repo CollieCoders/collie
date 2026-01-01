@@ -35,7 +35,11 @@ export type DiagnosticCode =
   | "COLLIE702"
   | "COLLIE703"
   | "dialect.token.disallowed"
-  | "dialect.token.nonPreferred";
+  | "dialect.token.nonPreferred"
+  | "props.missingDeclaration"
+  | "props.unusedDeclaration"
+  | "props.style.nonPreferred"
+  | "props.block.recommendedOrRequired";
 
 export interface SourcePos {
   line: number;
@@ -55,11 +59,17 @@ export interface Diagnostic {
   code?: DiagnosticCode;
   file?: string;
   fix?: DiagnosticFix;
+  data?: DiagnosticData;
 }
 
 export interface DiagnosticFix {
   range: SourceSpan;
   replacementText: string;
+}
+
+export interface DiagnosticData {
+  kind: string;
+  [key: string]: unknown;
 }
 
 export function createSpan(line: number, col: number, length: number, lineOffset: number): SourceSpan {
