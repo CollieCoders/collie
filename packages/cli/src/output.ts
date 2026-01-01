@@ -21,8 +21,9 @@ export function printSummary(kind: SummaryKind, message: string, detail?: string
 }
 
 export function formatDiagnosticLine(diag: Diagnostic, fallbackFile?: string): string {
-  const fileLabel = diag.file ?? fallbackFile ?? "<unknown>";
-  const location = diag.span ? `${fileLabel}:${diag.span.start.line}:${diag.span.start.col}` : fileLabel;
+  const fileLabel = diag.filePath ?? diag.file ?? fallbackFile ?? "<unknown>";
+  const range = diag.range ?? diag.span;
+  const location = range ? `${fileLabel}:${range.start.line}:${range.start.col}` : fileLabel;
   const code = diag.code ? ` (${diag.code})` : "";
   return `${location}: ${diag.severity}${code}: ${diag.message}`;
 }

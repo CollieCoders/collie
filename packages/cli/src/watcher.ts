@@ -132,8 +132,10 @@ async function deleteCompiledFile(
 
 function logDiagnostics(file: string, diagnostics: Diagnostic[]): void {
   for (const diag of diagnostics) {
-    const location = diag.span ? `${diag.span.start.line}:${diag.span.start.col}` : "";
-    const prefix = location ? `${toDisplayPath(file)}:${location}` : toDisplayPath(file);
+    const range = diag.range ?? diag.span;
+    const fileLabel = diag.filePath ?? diag.file ?? file;
+    const location = range ? `${range.start.line}:${range.start.col}` : "";
+    const prefix = location ? `${toDisplayPath(fileLabel)}:${location}` : toDisplayPath(fileLabel);
     const code = diag.code ? ` (${diag.code})` : "";
     const writer = diag.severity === "warning" ? pc.yellow : pc.red;
     console[diag.severity === "warning" ? "warn" : "error"](

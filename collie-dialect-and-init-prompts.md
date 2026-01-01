@@ -180,7 +180,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 ### Stage 5 — Structured diagnostics output contract (compiler-side)
 
-#### Complete: 0%
+#### Complete: 100%
 
 **Work to do**
 

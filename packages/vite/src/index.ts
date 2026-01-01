@@ -26,8 +26,9 @@ function toComponentNameHint(id: string): string {
 }
 
 function formatDiagnostic(id: string, diagnostic: Diagnostic): string {
-  const file = diagnostic.file ?? stripQuery(id);
-  const where = diagnostic.span ? `${diagnostic.span.start.line}:${diagnostic.span.start.col}` : "";
+  const file = diagnostic.filePath ?? diagnostic.file ?? stripQuery(id);
+  const range = diagnostic.range ?? diagnostic.span;
+  const where = range ? `${range.start.line}:${range.start.col}` : "";
   const location = where ? `${file}:${where}` : file;
   const code = diagnostic.code ? diagnostic.code : "COLLIE";
   return `${location} [${code}] ${diagnostic.message}`;

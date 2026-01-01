@@ -110,9 +110,9 @@ export type CompileOptions = JsxCompileOptions;
 export function parseCollie(source: string, options: ParseCollieOptions = {}): CollieDocument {
   const result = parse(source, { dialect: options.dialect });
   if (!options.filename) {
-    return result;
+    return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics) };
   }
-  return { root: result.root, diagnostics: attachFilename(result.diagnostics, options.filename) };
+  return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics, options.filename) };
 }
 
 export function compileToJsx(
@@ -120,7 +120,7 @@ export function compileToJsx(
   options: JsxCompileOptions = {}
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
@@ -138,7 +138,7 @@ export function compileToTsx(
   options: TsxCompileOptions = {}
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
@@ -156,7 +156,7 @@ export function compileToHtml(
   options: HtmlCompileOptions = {}
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
 
   let code = createStubHtml();
   if (!hasErrors(diagnostics)) {
@@ -256,8 +256,24 @@ function deriveIdentifierFromFilename(filename?: string): string | undefined {
 }
 
 function attachFilename(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {
-  if (!filename) {
-    return diagnostics;
-  }
-  return diagnostics.map((diag) => (diag.file ? diag : { ...diag, file: filename }));
+  return normalizeDiagnostics(diagnostics, filename);
+}
+
+function normalizeDiagnostics(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {
+  return diagnostics.map((diag) => {
+    const filePath = diag.filePath ?? diag.file ?? filename;
+    const file = diag.file ?? filename;
+    const range = diag.range ?? diag.span;
+
+    if (filePath === diag.filePath && file === diag.file && range === diag.range) {
+      return diag;
+    }
+
+    return {
+      ...diag,
+      filePath,
+      file,
+      range
+    };
+  });
 }

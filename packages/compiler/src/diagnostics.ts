@@ -56,8 +56,10 @@ export interface Diagnostic {
   severity: DiagnosticSeverity;
   message: string;
   span?: SourceSpan;
+  range?: SourceSpan;
   code?: DiagnosticCode;
   file?: string;
+  filePath?: string;
   fix?: DiagnosticFix;
   data?: DiagnosticData;
 }

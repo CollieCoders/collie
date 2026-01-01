@@ -51,11 +51,18 @@ export async function check(patterns: string[], options: CheckOptions = {}): Pro
 
       const parseResult = parseCollie(source);
       for (const diag of parseResult.diagnostics) {
+        const range = diag.range ?? diag.span;
         const normalized: Diagnostic = {
           ...diag,
           file: diag.file
             ? toDisplayPath(path.isAbsolute(diag.file) ? diag.file : path.resolve(path.dirname(file), diag.file))
-            : displayPath
+            : displayPath,
+          filePath: diag.filePath
+            ? toDisplayPath(
+                path.isAbsolute(diag.filePath) ? diag.filePath : path.resolve(path.dirname(file), diag.filePath)
+              )
+            : displayPath,
+          range
         };
 
         if (normalized.severity === "error") {
@@ -112,13 +119,15 @@ function printTextDiagnostics(result: CheckResult, options: CheckOptions, lineCa
       const writer = diag.severity === "warning" ? pc.yellow : pc.red;
       console.log(writer(message));
 
-      if (options.verbose && diag.span && diag.file) {
-        const lines = lineCache.get(diag.file);
+      const range = diag.range ?? diag.span;
+      const fileLabel = diag.filePath ?? diag.file;
+      if (options.verbose && range && fileLabel) {
+        const lines = lineCache.get(fileLabel);
         if (lines) {
-          const index = Math.max(0, diag.span.start.line - 1);
+          const index = Math.max(0, range.start.line - 1);
           const text = lines[index] ?? "";
-          const markerStart = Math.max(0, diag.span.start.col - 1);
-          const width = Math.max(1, diag.span.end.col - diag.span.start.col);
+          const markerStart = Math.max(0, range.start.col - 1);
+          const width = Math.max(1, range.end.col - range.start.col);
           const indicator = `${" ".repeat(markerStart)}${"^".repeat(width)}`;
 
           console.log(pc.dim(`  ${text}`));
