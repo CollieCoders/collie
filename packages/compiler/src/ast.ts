@@ -18,6 +18,8 @@ export interface RootNode {
   clientComponent?: boolean;
   id?: string;
   rawId?: string;
+  idToken?: string;
+  idTokenSpan?: SourceSpan;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode | ForNode | ComponentNode | JSXPassthroughNode;
@@ -51,6 +53,8 @@ export interface ForNode {
   itemName: string;
   arrayExpr: string;
   body: Node[];
+  token?: string;
+  tokenSpan?: SourceSpan;
 }
 
 export interface JSXPassthroughNode {
@@ -81,8 +85,11 @@ export interface ExpressionNode {
 }
 
 export interface ConditionalBranch {
+  kind?: "if" | "elseIf" | "else";
   test?: string;
   body: Node[];
+  token?: string;
+  tokenSpan?: SourceSpan;
 }
 
 export interface ConditionalNode {

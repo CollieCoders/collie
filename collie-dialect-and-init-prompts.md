@@ -93,7 +93,7 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 ### Stage 3 — Dialect enforcement for directive tokens (parse-first, enforce-second)
 
-#### Complete: 0%
+#### Complete: 90%
 
 **Work to do**
 
@@ -132,6 +132,8 @@ Design principle: **Parse broadly, enforce narrowly.** The parser should recogni
 
 * Keep supported spellings bounded to what Collie already accepts (do not invent arbitrary new tokens).
 * Make sure missing/invalid config doesn’t break parsing; enforcement should gracefully no-op.
+* Dialect enforcement currently runs only when a normalized `dialect` config is passed into `parseCollie`/`compileTo*`. CLI wiring to load config is still needed.
+* `info` severity maps to `warning` in compiler diagnostics until the severity enum is expanded.
 
 ---
 

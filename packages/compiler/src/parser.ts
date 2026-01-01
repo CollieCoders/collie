@@ -15,12 +15,18 @@ import type {
   SlotBlock,
   TextNode
 } from "./ast";
+import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
 import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
+import { enforceDialect } from "./dialect";
 
 export interface ParseResult {
   root: RootNode;
   diagnostics: Diagnostic[];
+}
+
+export interface ParseOptions {
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 interface ConditionalBranchContext {
@@ -66,7 +72,7 @@ function getIndentLevel(line: string): number {
   return match ? match[0].length / 2 : 0;
 }
 
-export function parse(source: string): ParseResult {
+export function parse(source: string, options: ParseOptions = {}): ParseResult {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
@@ -162,6 +168,10 @@ export function parse(source: string): ParseResult {
     const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
     if (idMatch) {
       const column = indent + 1;
+      const idTokenBase = idMatch[1];
+      const remainderRaw = idMatch[2] ?? "";
+      const immediateSuffix = remainderRaw.startsWith(":") || remainderRaw.startsWith("=") ? remainderRaw[0] : "";
+      const idToken = `${idTokenBase}${immediateSuffix}`;
       if (level !== 0) {
         pushDiag(
           diagnostics,
@@ -198,7 +208,6 @@ export function parse(source: string): ParseResult {
         );
         continue;
       }
-      const remainderRaw = idMatch[2] ?? "";
       if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
         pushDiag(
           diagnostics,
@@ -254,6 +263,8 @@ export function parse(source: string): ParseResult {
       }
       root.rawId = valuePart;
       root.id = normalizedId;
+      root.idToken = idToken;
+      root.idTokenSpan = createSpan(lineNumber, column, idToken.length, lineOffset);
       continue;
     }
 
@@ -412,7 +423,9 @@ export function parse(source: string): ParseResult {
         type: "For",
         itemName: forHeader.itemName,
         arrayExpr: forHeader.arrayExpr,
-        body: []
+        body: [],
+        token: forHeader.token,
+        tokenSpan: forHeader.tokenSpan
       };
       addChildToParent(parent, forNode);
       if (parent === root) {
@@ -436,7 +449,13 @@ export function parse(source: string): ParseResult {
         continue;
       }
       const chain: ConditionalNode = { type: "Conditional", branches: [] };
-      const branch: ConditionalBranch = { test: header.test, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "if",
+        test: header.test,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan
+      };
       chain.branches.push(branch);
       addChildToParent(parent, chain);
       if (parent === root) {
@@ -505,7 +524,13 @@ export function parse(source: string): ParseResult {
       if (!header) {
         continue;
       }
-      const branch: ConditionalBranch = { test: header.test, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "elseIf",
+        test: header.test,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan
+      };
       chain.node.branches.push(branch);
       branchLocations.push({
         branch,
@@ -561,7 +586,13 @@ export function parse(source: string): ParseResult {
       if (!header) {
         continue;
       }
-      const branch: ConditionalBranch = { test: undefined, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "else",
+        test: undefined,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan
+      };
       chain.node.branches.push(branch);
       chain.hasElse = true;
       branchLocations.push({
@@ -784,6 +815,10 @@ export function parse(source: string): ParseResult {
     }
   }
 
+  if (options.dialect) {
+    diagnostics.push(...enforceDialect(root, options.dialect));
+  }
+
   return { root, diagnostics };
 }
 
@@ -816,6 +851,8 @@ interface ConditionalHeaderResult {
   inlineBody?: string;
   inlineColumn?: number;
   directiveLength: number;
+  token: string;
+  tokenSpan?: SourceSpan;
 }
 
 function parseConditionalHeader(
@@ -841,6 +878,8 @@ function parseConditionalHeader(
     );
     return null;
   }
+  const token = kind === "if" ? "@if" : "@elseIf";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const test = match[1].trim();
   if (!test) {
     pushDiag(
@@ -864,7 +903,9 @@ function parseConditionalHeader(
     test,
     inlineBody: inlineBody.length ? inlineBody : undefined,
     inlineColumn,
-    directiveLength: trimmed.length || 3
+    directiveLength: trimmed.length || 3,
+    token,
+    tokenSpan
   };
 }
 
@@ -889,6 +930,8 @@ function parseElseHeader(
     );
     return null;
   }
+  const token = "@else";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const remainderRaw = match[1] ?? "";
   const inlineBody = remainderRaw.trim();
   const remainderOffset = trimmed.length - remainderRaw.length;
@@ -898,13 +941,17 @@ function parseElseHeader(
   return {
     inlineBody: inlineBody.length ? inlineBody : undefined,
     inlineColumn,
-    directiveLength: trimmed.length || 4
+    directiveLength: trimmed.length || 4,
+    token,
+    tokenSpan
   };
 }
 
 interface ForHeaderResult {
   itemName: string;
   arrayExpr: string;
+  token: string;
+  tokenSpan?: SourceSpan;
 }
 
 function parseForHeader(
@@ -928,6 +975,8 @@ function parseForHeader(
     );
     return null;
   }
+  const token = "@for";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const itemName = match[1];
   const arrayExprRaw = match[2];
   if (!itemName || !arrayExprRaw) {
@@ -955,7 +1004,7 @@ function parseForHeader(
     );
     return null;
   }
-  return { itemName, arrayExpr };
+  return { itemName, arrayExpr, token, tokenSpan };
 }
 
 function parseInlineNode(

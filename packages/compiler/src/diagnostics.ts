@@ -33,7 +33,9 @@ export type DiagnosticCode =
   | "COLLIE601"
   | "COLLIE701"
   | "COLLIE702"
-  | "COLLIE703";
+  | "COLLIE703"
+  | "dialect.token.disallowed"
+  | "dialect.token.nonPreferred";
 
 export interface SourcePos {
   line: number;
@@ -52,6 +54,12 @@ export interface Diagnostic {
   span?: SourceSpan;
   code?: DiagnosticCode;
   file?: string;
+  fix?: DiagnosticFix;
+}
+
+export interface DiagnosticFix {
+  range: SourceSpan;
+  replacementText: string;
 }
 
 export function createSpan(line: number, col: number, length: number, lineOffset: number): SourceSpan {

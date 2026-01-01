@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { generateModule } from "./codegen";
 import { generateHtml } from "./html-codegen";
 import { normalizeIdentifierValue } from "./identifier";
@@ -69,11 +70,13 @@ export type {
 
 export interface ParseCollieOptions {
   filename?: string;
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 export interface BaseCompileOptions {
   filename?: string;
   componentNameHint?: string;
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 export interface JsxCompileOptions extends BaseCompileOptions {
@@ -105,7 +108,7 @@ export type CollieDocument = ParseResult;
 export type CompileOptions = JsxCompileOptions;
 
 export function parseCollie(source: string, options: ParseCollieOptions = {}): CollieDocument {
-  const result = parse(source);
+  const result = parse(source, { dialect: options.dialect });
   if (!options.filename) {
     return result;
   }
@@ -116,7 +119,7 @@ export function compileToJsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: JsxCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
@@ -134,7 +137,7 @@ export function compileToTsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: TsxCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
@@ -152,7 +155,7 @@ export function compileToHtml(
   sourceOrAst: string | RootNode | CollieDocument,
   options: HtmlCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
 
   let code = createStubHtml();
@@ -172,10 +175,11 @@ export { parseCollie as parse };
 
 function normalizeDocument(
   sourceOrAst: string | RootNode | CollieDocument,
-  filename?: string
+  filename?: string,
+  dialect?: NormalizedCollieDialectOptions
 ): CollieDocument {
   if (typeof sourceOrAst === "string") {
-    return parseCollie(sourceOrAst, { filename });
+    return parseCollie(sourceOrAst, { filename, dialect });
   }
 
   if (isCollieDocument(sourceOrAst)) {
