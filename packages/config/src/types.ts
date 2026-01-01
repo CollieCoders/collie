@@ -2,7 +2,54 @@ export interface CollieConfig {
   compiler?: CollieCompilerOptions;
   features?: CollieFeatureOptions;
   editor?: CollieEditorOptions;
+  css?: CollieCssOptions;
+  dialect?: CollieDialectOptions;
   projects: CollieProjectConfig[];
+}
+
+export type CollieDiagnosticLevel = "off" | "info" | "warn" | "error";
+
+export type CollieCssStrategy = "tailwind" | "global" | "unknown";
+
+export interface CollieCssOptions {
+  strategy?: CollieCssStrategy;
+  diagnostics?: {
+    unknownClass?: CollieDiagnosticLevel;
+  };
+}
+
+export type CollieDialectTokenKind = "if" | "else" | "elseIf" | "for" | "id";
+
+export interface CollieDialectTokenRule {
+  preferred: string;
+  allow?: string[];
+  onDisallowed?: CollieDiagnosticLevel;
+}
+
+export type CollieDialectTokens = Partial<Record<CollieDialectTokenKind, CollieDialectTokenRule>>;
+
+export interface CollieDialectPropsOptions {
+  allowPropsNamespace?: boolean;
+  allowDeclaredLocals?: boolean;
+  requireDeclarationForLocals?: boolean;
+  requirePropsBlockWhen?: {
+    enabled?: boolean;
+    minUniquePropsUsed?: number;
+    severity?: CollieDiagnosticLevel;
+  };
+  preferAccessStyle?: "locals" | "namespace" | "either";
+  diagnostics?: {
+    missingDeclaration?: CollieDiagnosticLevel;
+    unusedDeclaration?: CollieDiagnosticLevel;
+    style?: CollieDiagnosticLevel;
+  };
+}
+
+export interface CollieDialectOptions {
+  tokens?: CollieDialectTokens;
+  normalizeOnFormat?: boolean;
+  normalizeOnBuild?: boolean;
+  props?: CollieDialectPropsOptions;
 }
 
 export interface CollieProjectConfig {
@@ -90,6 +137,8 @@ export interface CollieEditorOptions {
 }
 
 export interface NormalizedCollieConfig extends CollieConfig {
+  css: NormalizedCollieCssOptions;
+  dialect: NormalizedCollieDialectOptions;
   projects: NormalizedCollieProjectConfig[];
 }
 
@@ -103,4 +152,43 @@ export interface NormalizedCollieProjectConfig extends CollieProjectConfig {
   };
   html?: HtmlProjectOptions;
   react?: ReactProjectOptions;
+}
+
+export interface NormalizedCollieCssOptions {
+  strategy: CollieCssStrategy;
+  diagnostics: {
+    unknownClass: CollieDiagnosticLevel;
+  };
+}
+
+export interface NormalizedCollieDialectTokenRule {
+  preferred: string;
+  allow: string[];
+  onDisallowed: CollieDiagnosticLevel;
+}
+
+export type NormalizedCollieDialectTokens = Record<CollieDialectTokenKind, NormalizedCollieDialectTokenRule>;
+
+export interface NormalizedCollieDialectPropsOptions {
+  allowPropsNamespace: boolean;
+  allowDeclaredLocals: boolean;
+  requireDeclarationForLocals: boolean;
+  requirePropsBlockWhen: {
+    enabled: boolean;
+    minUniquePropsUsed: number;
+    severity: CollieDiagnosticLevel;
+  };
+  preferAccessStyle: "locals" | "namespace" | "either";
+  diagnostics: {
+    missingDeclaration: CollieDiagnosticLevel;
+    unusedDeclaration: CollieDiagnosticLevel;
+    style: CollieDiagnosticLevel;
+  };
+}
+
+export interface NormalizedCollieDialectOptions {
+  tokens: NormalizedCollieDialectTokens;
+  normalizeOnFormat: boolean;
+  normalizeOnBuild: boolean;
+  props: NormalizedCollieDialectPropsOptions;
 }

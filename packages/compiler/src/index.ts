@@ -9,13 +9,26 @@ import type { RootNode } from "./ast";
 
 export type {
   CollieConfig,
+  CollieCssOptions,
+  CollieCssStrategy,
+  CollieDialectOptions,
+  CollieDialectPropsOptions,
+  CollieDialectTokenKind,
+  CollieDialectTokenRule,
+  CollieDialectTokens,
+  CollieDiagnosticLevel,
   CollieProjectConfig,
   CollieCompilerOptions,
   CollieFeatureOptions,
   CollieEditorOptions,
   HtmlProjectOptions,
   ReactProjectOptions,
+  NormalizedCollieCssOptions,
   NormalizedCollieConfig,
+  NormalizedCollieDialectOptions,
+  NormalizedCollieDialectPropsOptions,
+  NormalizedCollieDialectTokenRule,
+  NormalizedCollieDialectTokens,
   NormalizedCollieProjectConfig
 } from "@collie-lang/config";
 export {
