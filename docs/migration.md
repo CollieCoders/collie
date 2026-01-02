@@ -4,6 +4,9 @@
 
 Collie templates (`.collie` files) are framework-agnostic and can be used in both Vite and Next.js projects without modification. Only your build tooling changes.
 
+> ⚠️ **Legacy workflow warning**  
+> This guide still presumes `.collie` files are imported as React components. The new registry-oriented workflow with `<Collie id="...">` is documented in `ARCHITECTURE.md`. Treat the import-based examples below as temporarily deprecated and slated for revision.
+
 ## From Vite to Next.js
 
 ### 1. Update Dependencies

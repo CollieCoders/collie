@@ -5,6 +5,9 @@ It brings the readability of Pug, the structure of modern component systems, and
 
 Collie templates compile directly to **clean, predictable JSX/TSX**, integrate seamlessly with **Vite**, and work flawlessly inside any modern React stack.
 
+> ⚠️ **Legacy workflow (deprecated)**  
+> This README currently references the previous `.collie` → component import flow. See `ARCHITECTURE.md` for the new registry-based `<Collie id="...">` runtime. Direct `.collie` imports and component-name-based addressing will be removed in later stages.
+
 ---
 
 <p align="center">
@@ -108,6 +111,9 @@ pnpm dlx @collie-lang/cli init --nextjs my-collie-next-app
 ```
 
 ### Manual Setup — Vite
+
+> ⚠️ **Deprecated setup**  
+> The steps below describe the legacy behavior of importing `.collie` files as React components. Refer to `ARCHITECTURE.md` to learn the new `<Collie id="...">` + `virtual:collie/registry` workflow; this section will be reworked in a later stage.
 
 1. Install the Vite plugin:
 
