@@ -257,7 +257,7 @@ Make `collie init` generate the expected demo setup:
 
 ## Stage 6 — Optional: Vite Plugin HMR Determinism Hardening
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 Reduce demo flakiness by ensuring `.collie` edits consistently update the browser:
