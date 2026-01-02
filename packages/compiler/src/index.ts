@@ -41,10 +41,12 @@ export {
 
 export type {
   Diagnostic,
+  DiagnosticFix,
   DiagnosticSeverity,
   SourcePos,
   SourceSpan
 } from "./diagnostics";
+export { applyFixes, fixAllFromDiagnostics } from "./fixes";
 export type { ParseResult } from "./parser";
 export type {
   Attribute,

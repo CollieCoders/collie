@@ -112,7 +112,7 @@ Enable the demo “wow moment”:
 
 ## Stage 2 — Fix-All Apply Helper (Compiler)
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 Provide a core helper that can apply all non-overlapping `Diagnostic.fix` edits in a file.
