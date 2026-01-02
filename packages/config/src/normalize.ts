@@ -337,6 +337,6 @@ function normalizeAllowList(allow: string[], preferred: string): string[] {
   return normalized;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isPlainObject(value: unknown): boolean {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }

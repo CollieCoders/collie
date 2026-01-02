@@ -378,6 +378,7 @@ function buildElementLine(element: ts.JsxOpeningLikeElement, ctx: ConverterConte
 }
 
 function getTagName(tag: ts.JsxTagNameExpression, ctx: ConverterContext): string {
+  const fallback = tag.getText(ctx.sourceFile);
   if (ts.isIdentifier(tag)) {
     return tag.text;
   }
@@ -391,7 +392,7 @@ function getTagName(tag: ts.JsxTagNameExpression, ctx: ConverterContext): string
   if (ts.isJsxNamespacedName(tag)) {
     return `${tag.namespace.text}:${tag.name.text}`;
   }
-  return tag.getText(ctx.sourceFile);
+  return fallback;
 }
 
 function convertAttributes(attributes: ts.JsxAttributes, ctx: ConverterContext): {
@@ -403,7 +404,11 @@ function convertAttributes(attributes: ts.JsxAttributes, ctx: ConverterContext):
 
   for (const attr of attributes.properties) {
     if (ts.isJsxAttribute(attr)) {
-      const attrName = attr.name.text;
+      const attrName = getAttributeName(attr.name, ctx);
+      if (!attrName) {
+        ctx.warnings.push("Skipping unsupported attribute name.");
+        continue;
+      }
       if (attrName === "className" || attrName === "class") {
         const handled = handleClassAttribute(attr, ctx, classSegments, attrs);
         if (!handled) {
@@ -438,6 +443,7 @@ function handleClassAttribute(
     attrs.push(`className={${expressionText}}`);
     return true;
   }
+  ctx.warnings.push("Unsupported class attribute value; leaving as-is.");
   return false;
 }
 
@@ -450,7 +456,7 @@ function splitClassNames(value: string): string[] {
 
 function formatAttribute(
   name: string,
-  initializer: ts.StringLiteral | ts.JsxExpression | undefined,
+  initializer: ts.JsxAttributeValue | undefined,
   ctx: ConverterContext
 ): string {
   if (!initializer) {
@@ -459,11 +465,25 @@ function formatAttribute(
   if (ts.isStringLiteral(initializer)) {
     return `${name}="${initializer.text}"`;
   }
-  if (ts.isJsxExpression(initializer) && initializer.expression) {
-    const expr = initializer.expression.getText(ctx.sourceFile).trim();
-    return `${name}={${expr}}`;
+  if (ts.isJsxExpression(initializer)) {
+    if (initializer.expression) {
+      const expr = initializer.expression.getText(ctx.sourceFile).trim();
+      return `${name}={${expr}}`;
+    }
+    return name;
   }
+  ctx.warnings.push("Unsupported JSX attribute value; leaving as-is.");
   return name;
+}
+
+function getAttributeName(name: ts.JsxAttributeName, ctx: ConverterContext): string | null {
+  if (ts.isIdentifier(name)) {
+    return name.text;
+  }
+  if (ts.isJsxNamespacedName(name)) {
+    return `${name.namespace.text}:${name.name.text}`;
+  }
+  return null;
 }
 
 function convertJsxText(textNode: ts.JsxText, ctx: ConverterContext, indent: number): string[] {
