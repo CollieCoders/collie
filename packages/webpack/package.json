@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/webpack",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Webpack loader for Collie template language",
   "type": "module",
   "main": "./dist/index.cjs",

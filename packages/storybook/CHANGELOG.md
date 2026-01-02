@@ -1,5 +1,17 @@
 # @collie-lang/storybook
 
+## 2.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/webpack@5.0.0
+  - @collie-lang/vite@2.0.0
+
 ## 1.0.3
 
 ### Patch Changes
