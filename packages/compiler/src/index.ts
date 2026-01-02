@@ -69,6 +69,8 @@ export type {
   TextNode,
   TextPart
 } from "./ast";
+export type { FormatOptions, FormatResult } from "./format";
+export { formatCollie } from "./format";
 
 export interface ParseCollieOptions {
   filename?: string;

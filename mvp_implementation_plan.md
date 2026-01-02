@@ -142,7 +142,7 @@ This enables:
 
 ## Stage 3 — Expose Formatter as a Core API (Compiler or Shared Package)
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 Make formatting callable programmatically by the VS Code extension (without shelling out to CLI).
