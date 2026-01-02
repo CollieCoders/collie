@@ -17,7 +17,7 @@ import type {
 } from "./ast";
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
-import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
+import { hasWhitespace, isPascalCase, normalizeIdentifierValue, toPascalCase } from "./identifier";
 import { enforceDialect } from "./dialect";
 import { enforceProps } from "./props";
 
@@ -71,6 +71,33 @@ const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
 function getIndentLevel(line: string): number {
   const match = line.match(/^\s*/);
   return match ? match[0].length / 2 : 0;
+}
+
+function getIdValueSpan(
+  lineContent: string,
+  indent: number,
+  lineNumber: number,
+  lineOffset: number,
+  tokenLength: number,
+  valueLength: number
+): SourceSpan | undefined {
+  if (valueLength <= 0) {
+    return undefined;
+  }
+
+  let cursor = tokenLength;
+  while (cursor < lineContent.length && /\s/.test(lineContent[cursor])) {
+    cursor++;
+  }
+  if (lineContent[cursor] === ":" || lineContent[cursor] === "=") {
+    cursor++;
+    while (cursor < lineContent.length && /\s/.test(lineContent[cursor])) {
+      cursor++;
+    }
+  }
+
+  const column = indent + cursor + 1;
+  return createSpan(lineNumber, column, valueLength, lineOffset);
 }
 
 export function parse(source: string, options: ParseOptions = {}): ParseResult {
@@ -261,6 +288,31 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
           trimmed.length
         );
         continue;
+      }
+      const valueSpan = getIdValueSpan(
+        lineContent,
+        indent,
+        lineNumber,
+        lineOffset,
+        idTokenBase.length,
+        valuePart.length
+      );
+      if (!isPascalCase(valuePart)) {
+        const suggested = toPascalCase(valuePart);
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE_ID_NOT_PASCAL_CASE",
+          message: `The #id value must be PascalCase. Suggested: "${suggested || "MyComponent"}".`,
+          span: valueSpan,
+          range: valueSpan,
+          fix:
+            valueSpan && suggested
+              ? {
+                  range: valueSpan,
+                  replacementText: suggested
+                }
+              : undefined
+        });
       }
       root.rawId = valuePart;
       root.id = normalizedId;
