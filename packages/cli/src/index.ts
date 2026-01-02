@@ -25,6 +25,12 @@ type Framework = "vite" | "nextjs";
 type CollieProjectType = "react-vite" | "react-next" | "react-generic" | "html";
 type CssStrategy = "tailwind" | "global" | "unknown";
 type CssDiagnosticLevel = "off" | "warn";
+type PreflightCommand = "init" | "check";
+
+interface PreflightOptions {
+  framework?: Framework;
+  packageManager?: PackageManager;
+}
 
 interface CssDetectionResult {
   strategy: CssStrategy;
@@ -72,12 +78,20 @@ const COLLIE_NEXT_VERSION_RANGE = normalizeDependencyRange(
   CLI_DEPENDENCY_SPECS["@collie-lang/next"],
   DEFAULT_DEPENDENCY_RANGE
 );
+const COLLIE_CORE_PACKAGES = ["@collie-lang/compiler", "@collie-lang/config"] as const;
+const COLLIE_VITE_PACKAGES = [
+  ...COLLIE_CORE_PACKAGES,
+  "@collie-lang/vite",
+  "@collie-lang/html-runtime"
+] as const;
+const COLLIE_NEXT_PACKAGES = [...COLLIE_CORE_PACKAGES, "@collie-lang/next"] as const;
 const PROMPT_OPTIONS = {
   onCancel: () => {
     console.log(pc.yellow("\nCancelled"));
     process.exit(0);
   }
 } as const;
+let preflightCompleted = false;
 
 async function main() {
   const args = process.argv.slice(2);
@@ -124,6 +138,11 @@ async function main() {
       noWarnings: hasFlag(rest, "--no-warnings"),
       maxWarnings: maxWarnings >= 0 ? maxWarnings : undefined
     };
+
+    const shouldContinue = await runPreflight("check");
+    if (!shouldContinue) {
+      return;
+    }
 
     const result = await runCheck(patterns, options);
 
@@ -412,6 +431,13 @@ async function main() {
     };
 
     try {
+      const shouldContinue = await runPreflight("init", {
+        framework: initOptions.framework,
+        packageManager: initOptions.packageManager
+      });
+      if (!shouldContinue) {
+        return;
+      }
       await runInit(initOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -697,6 +723,132 @@ async function promptProjectType(): Promise<CollieProjectType> {
     PROMPT_OPTIONS
   );
   return (response.projectType as CollieProjectType) ?? "react-generic";
+}
+
+async function runPreflight(command: PreflightCommand, options: PreflightOptions = {}): Promise<boolean> {
+  if (preflightCompleted) {
+    return true;
+  }
+  preflightCompleted = true;
+
+  const projectRoot = findProjectRoot(process.cwd());
+  if (!projectRoot) {
+    console.log(pc.dim("Skipping dependency preflight (no package.json found)."));
+    return true;
+  }
+
+  let packageJson: Record<string, any> | null = null;
+  try {
+    packageJson = await readProjectPackage(projectRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(pc.yellow(`Skipping dependency preflight: failed to read package.json (${message}).`));
+    return true;
+  }
+
+  if (!packageJson) {
+    console.log(pc.dim("Skipping dependency preflight (package.json not found)."));
+    return true;
+  }
+
+  const detectedFramework = detectFrameworkFromPackage(packageJson);
+  const resolvedFramework =
+    options.framework ?? detectedFramework ?? (command === "init" ? "vite" : undefined);
+  const requiredPackages = getRequiredPackages(command, resolvedFramework);
+  if (requiredPackages.length === 0) {
+    return true;
+  }
+
+  const missing = collectMissingDependencies(projectRoot, packageJson, requiredPackages);
+  if (missing.length === 0) {
+    return true;
+  }
+
+  const packageManager = options.packageManager ?? detectPackageManager(projectRoot);
+  const prompt = `Missing required Collie packages: ${missing.join(", ")}. Install now?`;
+  const shouldInstall = await promptForConfirmation(prompt, true);
+  if (!shouldInstall) {
+    console.log(pc.yellow("Skipped installing Collie dependencies."));
+    console.log(
+      pc.dim(`Next: ${formatInstallCommand(packageManager, missing)} && collie ${command}`)
+    );
+    return false;
+  }
+
+  const specs = missing.map((dep) => resolveDependencySpec(dep));
+  console.log(pc.cyan(`Installing ${missing.length} Collie package${missing.length === 1 ? "" : "s"}...`));
+  await installDevDependencies(packageManager, projectRoot, specs);
+  console.log(pc.green(`✔ Installed ${missing.length} Collie package${missing.length === 1 ? "" : "s"}.`));
+  return true;
+}
+
+function findProjectRoot(startDir: string): string | null {
+  let current = startDir;
+  while (true) {
+    if (existsSync(path.join(current, "package.json"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function getRequiredPackages(
+  command: PreflightCommand,
+  framework: Framework | null | undefined
+): string[] {
+  if (command === "check") {
+    return ["@collie-lang/compiler"];
+  }
+  if (framework === "nextjs") {
+    return [...COLLIE_NEXT_PACKAGES];
+  }
+  if (framework === "vite") {
+    return [...COLLIE_VITE_PACKAGES];
+  }
+  return [...COLLIE_CORE_PACKAGES];
+}
+
+function collectMissingDependencies(
+  projectRoot: string,
+  packageJson: Record<string, any>,
+  required: readonly string[]
+): string[] {
+  return required.filter((dependency) => !isDependencySatisfied(projectRoot, packageJson, dependency));
+}
+
+function isDependencySatisfied(
+  projectRoot: string,
+  packageJson: Record<string, any>,
+  dependency: string
+): boolean {
+  const listed = Boolean(
+    packageJson?.dependencies?.[dependency] || packageJson?.devDependencies?.[dependency]
+  );
+  if (listed) {
+    return true;
+  }
+  const modulePath = path.join(projectRoot, "node_modules", ...dependency.split("/"));
+  return existsSync(modulePath);
+}
+
+function resolveDependencySpec(packageName: string): string {
+  const range = normalizeDependencyRange(CLI_DEPENDENCY_SPECS[packageName], "latest");
+  return `${packageName}@${range}`;
+}
+
+function formatInstallCommand(packageManager: PackageManager, dependencies: string[]): string {
+  const specs = dependencies.map((dep) => resolveDependencySpec(dep));
+  if (packageManager === "pnpm") {
+    return `pnpm add -D ${specs.join(" ")}`;
+  }
+  if (packageManager === "yarn") {
+    return `yarn add -D ${specs.join(" ")}`;
+  }
+  return `npm install -D ${specs.join(" ")}`;
 }
 
 function detectPackageManager(root: string): PackageManager {

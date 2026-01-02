@@ -174,7 +174,7 @@ Codex reported:
 
 ## Stage 4 — CLI Preflight Dependency Checks + Prompt-to-Install
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 When user runs `collie init` (or any command), Collie:
