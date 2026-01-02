@@ -21,7 +21,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@collie-lang/config": "workspace:*"
+    "@collie-lang/config": "workspace:*",
+    "typescript": "^5.7.2"
   },
   "scripts": {
     "build": "tsup",
@@ -32,7 +33,6 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "tsx": "^4.19.2"
   }
 }

@@ -71,6 +71,8 @@ export type {
 } from "./ast";
 export type { FormatOptions, FormatResult } from "./format";
 export { formatCollie } from "./format";
+export type { ConvertTsxOptions, ConvertTsxResult } from "./convert";
+export { convertTsxToCollie } from "./convert";
 
 export interface ParseCollieOptions {
   filename?: string;
@@ -104,6 +106,12 @@ export interface CollieCompileMeta {
 export interface CompileResult {
   code: string;
   map?: any;
+  diagnostics: Diagnostic[];
+  meta?: CollieCompileMeta;
+}
+
+export interface ConvertCollieResult {
+  tsx: string;
   diagnostics: Diagnostic[];
   meta?: CollieCompileMeta;
 }
@@ -153,6 +161,15 @@ export function compileToTsx(
 
   const meta = buildCompileMeta(document, options.filename);
   return { code, diagnostics, map: undefined, meta };
+}
+
+export function convertCollieToTsx(source: string, options: TsxCompileOptions = {}): ConvertCollieResult {
+  const result = compileToTsx(source, options);
+  return {
+    tsx: result.code,
+    diagnostics: result.diagnostics,
+    meta: result.meta
+  };
 }
 
 export function compileToHtml(

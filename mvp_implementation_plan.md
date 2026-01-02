@@ -283,7 +283,7 @@ Reduce demo flakiness by ensuring `.collie` edits consistently update the browse
 
 ## Stage 7 — Optional: Core Conversion APIs (TSX ⇄ Collie)
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 Expose stable conversion functions for the VS Code extension to call:
