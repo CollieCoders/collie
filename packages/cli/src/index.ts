@@ -8,7 +8,6 @@ import { diffLines } from "diff";
 import pc from "picocolors";
 import prompts from "prompts";
 import { formatSource } from "./formatter";
-import { loadAndNormalizeConfig } from "@collie-lang/config";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
@@ -171,6 +170,14 @@ async function main() {
       : filePath
         ? path.dirname(path.resolve(process.cwd(), filePath))
         : process.cwd();
+
+    let loadAndNormalizeConfig: typeof import("@collie-lang/config").loadAndNormalizeConfig;
+    try {
+      ({ loadAndNormalizeConfig } = await import("@collie-lang/config"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to load @collie-lang/config (${message}).`);
+    }
 
     const normalized = await loadAndNormalizeConfig({ cwd });
     if (!normalized) {
