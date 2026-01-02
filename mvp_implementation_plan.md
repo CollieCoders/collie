@@ -224,7 +224,7 @@ When user runs `collie init` (or any command), Collie:
 
 ## Stage 5 — Upgrade `collie init` to Vite-Friendly Defaults
 
-**% Complete:** 0% (update after stage)
+**% Complete:** 100%
 
 ### Goals
 Make `collie init` generate the expected demo setup:

@@ -464,7 +464,7 @@ Commands:
   collie format   Format .collie templates
   collie convert  Convert JSX/TSX to .collie templates
   collie doctor   Diagnose setup issues
-  collie init     Create a minimal Collie config (no wiring)
+  collie init     Create a Collie config and wire Vite when possible
   collie watch    Watch and compile templates
   collie create   Scaffold a new Collie project
 `);
@@ -480,12 +480,11 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   const projectType = framework ? mapFrameworkToProjectType(framework) : await promptProjectType();
 
   const existingConfig = findExistingCollieConfig(projectRoot);
-  const targetPath = existingConfig ?? path.join(projectRoot, "collie.config.js");
+  const targetPath = existingConfig ?? path.join(projectRoot, "collie.config.ts");
   const relativeTarget = path.relative(projectRoot, targetPath) || path.basename(targetPath);
 
   console.log(pc.bold("collie init"));
-  console.log(pc.dim("This creates a minimal Collie config only."));
-  console.log(pc.dim("It does not install dependencies or wire your framework."));
+  console.log(pc.dim("This creates a Collie config and applies framework wiring when possible."));
   if (framework) {
     console.log(pc.dim(`Detected ${formatFrameworkLabel(framework)} project.`));
   } else {
@@ -496,8 +495,9 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   console.log(pc.dim(`Project type: ${describeProjectType(projectType)}.`));
   console.log("");
 
+  const configLabel = framework === "vite" ? "Vite-ready" : "Collie";
   const confirmMessage = existingConfig
-    ? `${relativeTarget} already exists. Replace it with a minimal config?`
+    ? `${relativeTarget} already exists. Replace it with a ${configLabel} config?`
     : `Create ${relativeTarget}?`;
   const shouldWrite = await promptForConfirmation(confirmMessage, !existingConfig);
   if (!shouldWrite) {
@@ -509,13 +509,65 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   const contents = buildInitConfig(projectType, path.extname(targetPath).toLowerCase(), cssDetection);
   await fs.writeFile(targetPath, contents, "utf8");
 
-  printSummary(
-    "success",
-    "Initialized Collie config",
-    `created ${relativeTarget}`,
-    "review the config and run collie check"
-  );
-  console.log(pc.dim("Not wired: no dependencies were installed and no framework config changes were made."));
+  const typeDeclarationsPath = path.join(projectRoot, "src", "collie.d.ts");
+  let typeDeclarationsStatus: "created" | "exists" | "skipped" = "skipped";
+  if (projectType !== "html" && shouldWriteTypeDeclarations(projectRoot, options)) {
+    if (existsSync(typeDeclarationsPath)) {
+      typeDeclarationsStatus = "exists";
+    } else {
+      await ensureCollieDeclaration(projectRoot);
+      typeDeclarationsStatus = "created";
+    }
+  }
+
+  let viteConfigStatus: "patched" | "already-configured" | "manual" | "not-found" | "skipped" = "skipped";
+  let viteConfigPath: string | null = null;
+  if (framework === "vite") {
+    viteConfigPath = findViteConfigFile(projectRoot);
+    if (viteConfigPath) {
+      viteConfigStatus = await patchViteConfig(viteConfigPath);
+    } else {
+      viteConfigStatus = "not-found";
+    }
+  }
+
+  printSummary("success", "Initialized Collie config", `created ${relativeTarget}`);
+
+  if (typeDeclarationsStatus !== "skipped") {
+    const declarationLabel = path.relative(projectRoot, typeDeclarationsPath) || path.basename(typeDeclarationsPath);
+    if (typeDeclarationsStatus === "created") {
+      console.log(pc.green(`✔ Added ${declarationLabel} for .collie typings`));
+    } else {
+      console.log(pc.dim(`- ${declarationLabel} already exists`));
+    }
+  } else if (projectType !== "html") {
+    console.log(
+      pc.dim("Skipping .collie typings (no TypeScript config found). Add src/collie.d.ts if you enable TypeScript.")
+    );
+  }
+
+  if (framework === "vite") {
+    if (viteConfigStatus === "patched" && viteConfigPath) {
+      console.log(pc.green(`✔ Updated ${path.relative(projectRoot, viteConfigPath) || path.basename(viteConfigPath)}`));
+    } else if (viteConfigStatus === "already-configured" && viteConfigPath) {
+      console.log(
+        pc.dim(`- ${path.relative(projectRoot, viteConfigPath) || path.basename(viteConfigPath)} already includes collie()`)
+      );
+    } else if (viteConfigStatus === "manual" && viteConfigPath) {
+      console.log(
+        pc.yellow(
+          `⚠ Could not patch ${path.relative(projectRoot, viteConfigPath) || path.basename(viteConfigPath)}. Add collie() manually to the Vite plugins array.`
+        )
+      );
+    } else if (viteConfigStatus === "not-found") {
+      console.log(pc.yellow("⚠ Vite config not found. Add the Collie plugin to vite.config.ts manually."));
+    }
+  }
+
+  if (framework === "vite") {
+    const pkgManager = options.packageManager ?? detectPackageManager(projectRoot);
+    printNextSteps(pkgManager, targetPath);
+  }
   if (!framework) {
     console.log(pc.dim(`Tip: update the project type in ${relativeTarget} if needed.`));
   }
@@ -556,6 +608,16 @@ function describeProjectType(projectType: CollieProjectType): string {
     html: "HTML (no framework)"
   };
   return labels[projectType];
+}
+
+function shouldWriteTypeDeclarations(projectRoot: string, options: InitOptions): boolean {
+  if (options.typescript === false) {
+    return false;
+  }
+  if (options.typescript === true) {
+    return true;
+  }
+  return existsSync(path.join(projectRoot, "tsconfig.json"));
 }
 
 async function detectCssStrategy(
@@ -673,7 +735,14 @@ function buildInitConfig(
     return `${JSON.stringify(config, null, 2)}\n`;
   }
 
-  const comment = "// Minimal Collie config. Update the project type or input as needed.\n";
+  const commentLines =
+    projectType === "react-vite"
+      ? [
+          "// Collie config for Vite.",
+          "// Templates are compiled in-memory by @collie-lang/vite."
+        ]
+      : ["// Collie config. Update the project type or input as needed."];
+  const comment = `${commentLines.join("\n")}\n`;
   const body = JSON.stringify(config, null, 2);
 
   if (ext === ".mjs" || ext === ".ts") {
@@ -867,29 +936,37 @@ async function installDevDependencies(packageManager: PackageManager, cwd: strin
   await runCommand(packageManager, argsByManager[packageManager], cwd);
 }
 
-async function patchViteConfig(configPath: string): Promise<void> {
-  let contents = await fs.readFile(configPath, "utf8");
+async function patchViteConfig(configPath: string): Promise<"patched" | "already-configured" | "manual"> {
+  const original = await fs.readFile(configPath, "utf8");
+  const hasImport = original.includes("@collie-lang/vite");
+  const hasPlugin = /\bcollie\s*\(/.test(original);
+  if (hasImport && hasPlugin) {
+    return "already-configured";
+  }
+
+  let updated = original;
   let changed = false;
 
-  if (!contents.includes("@collie-lang/vite")) {
-    contents = injectImport(contents);
+  if (!hasImport) {
+    updated = injectImport(updated);
     changed = true;
   }
 
-  if (!/\bcollie\s*\(/.test(contents)) {
-    const updated = injectColliePlugin(contents);
-    if (!updated) {
-      throw new Error(
-        "Could not find a plugins array in your Vite config. Add collie() manually to your plugins list."
-      );
+  if (!hasPlugin) {
+    const withPlugin = injectColliePlugin(updated);
+    if (!withPlugin) {
+      return "manual";
     }
-    contents = updated;
+    updated = withPlugin;
     changed = true;
   }
 
   if (changed) {
-    await fs.writeFile(configPath, contents, "utf8");
+    await fs.writeFile(configPath, updated, "utf8");
+    return "patched";
   }
+
+  return "already-configured";
 }
 
 function injectColliePlugin(source: string): string | null {
