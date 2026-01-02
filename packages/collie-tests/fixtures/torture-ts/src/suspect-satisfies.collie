@@ -1,0 +1,3 @@
+component Torture satisfies { foo: string } {
+  <div>{foo}</div>
+}

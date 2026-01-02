@@ -15,12 +15,19 @@ import type {
   SlotBlock,
   TextNode
 } from "./ast";
+import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
-import { hasWhitespace, normalizeIdentifierValue } from "./identifier";
+import { hasWhitespace, isPascalCase, normalizeIdentifierValue, toPascalCase } from "./identifier";
+import { enforceDialect } from "./dialect";
+import { enforceProps } from "./props";
 
 export interface ParseResult {
   root: RootNode;
   diagnostics: Diagnostic[];
+}
+
+export interface ParseOptions {
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 interface ConditionalBranchContext {
@@ -66,7 +73,34 @@ function getIndentLevel(line: string): number {
   return match ? match[0].length / 2 : 0;
 }
 
-export function parse(source: string): ParseResult {
+function getIdValueSpan(
+  lineContent: string,
+  indent: number,
+  lineNumber: number,
+  lineOffset: number,
+  tokenLength: number,
+  valueLength: number
+): SourceSpan | undefined {
+  if (valueLength <= 0) {
+    return undefined;
+  }
+
+  let cursor = tokenLength;
+  while (cursor < lineContent.length && /\s/.test(lineContent[cursor])) {
+    cursor++;
+  }
+  if (lineContent[cursor] === ":" || lineContent[cursor] === "=") {
+    cursor++;
+    while (cursor < lineContent.length && /\s/.test(lineContent[cursor])) {
+      cursor++;
+    }
+  }
+
+  const column = indent + cursor + 1;
+  return createSpan(lineNumber, column, valueLength, lineOffset);
+}
+
+export function parse(source: string, options: ParseOptions = {}): ParseResult {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
@@ -162,6 +196,10 @@ export function parse(source: string): ParseResult {
     const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
     if (idMatch) {
       const column = indent + 1;
+      const idTokenBase = idMatch[1];
+      const remainderRaw = idMatch[2] ?? "";
+      const immediateSuffix = remainderRaw.startsWith(":") || remainderRaw.startsWith("=") ? remainderRaw[0] : "";
+      const idToken = `${idTokenBase}${immediateSuffix}`;
       if (level !== 0) {
         pushDiag(
           diagnostics,
@@ -198,7 +236,6 @@ export function parse(source: string): ParseResult {
         );
         continue;
       }
-      const remainderRaw = idMatch[2] ?? "";
       if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
         pushDiag(
           diagnostics,
@@ -252,8 +289,35 @@ export function parse(source: string): ParseResult {
         );
         continue;
       }
+      const valueSpan = getIdValueSpan(
+        lineContent,
+        indent,
+        lineNumber,
+        lineOffset,
+        idTokenBase.length,
+        valuePart.length
+      );
+      if (!isPascalCase(valuePart)) {
+        const suggested = toPascalCase(valuePart);
+        diagnostics.push({
+          severity: "error",
+          code: "COLLIE_ID_NOT_PASCAL_CASE",
+          message: `The #id value must be PascalCase. Suggested: "${suggested || "MyComponent"}".`,
+          span: valueSpan,
+          range: valueSpan,
+          fix:
+            valueSpan && suggested
+              ? {
+                  range: valueSpan,
+                  replacementText: suggested
+                }
+              : undefined
+        });
+      }
       root.rawId = valuePart;
       root.id = normalizedId;
+      root.idToken = idToken;
+      root.idTokenSpan = createSpan(lineNumber, column, idToken.length, lineOffset);
       continue;
     }
 
@@ -412,7 +476,10 @@ export function parse(source: string): ParseResult {
         type: "For",
         itemName: forHeader.itemName,
         arrayExpr: forHeader.arrayExpr,
-        body: []
+        body: [],
+        token: forHeader.token,
+        tokenSpan: forHeader.tokenSpan,
+        arrayExprSpan: forHeader.arrayExprSpan
       };
       addChildToParent(parent, forNode);
       if (parent === root) {
@@ -436,7 +503,14 @@ export function parse(source: string): ParseResult {
         continue;
       }
       const chain: ConditionalNode = { type: "Conditional", branches: [] };
-      const branch: ConditionalBranch = { test: header.test, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "if",
+        test: header.test,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan,
+        testSpan: header.testSpan
+      };
       chain.branches.push(branch);
       addChildToParent(parent, chain);
       if (parent === root) {
@@ -505,7 +579,14 @@ export function parse(source: string): ParseResult {
       if (!header) {
         continue;
       }
-      const branch: ConditionalBranch = { test: header.test, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "elseIf",
+        test: header.test,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan,
+        testSpan: header.testSpan
+      };
       chain.node.branches.push(branch);
       branchLocations.push({
         branch,
@@ -561,7 +642,13 @@ export function parse(source: string): ParseResult {
       if (!header) {
         continue;
       }
-      const branch: ConditionalBranch = { test: undefined, body: [] };
+      const branch: ConditionalBranch = {
+        kind: "else",
+        test: undefined,
+        body: [],
+        token: header.token,
+        tokenSpan: header.tokenSpan
+      };
       chain.node.branches.push(branch);
       chain.hasElse = true;
       branchLocations.push({
@@ -784,6 +871,11 @@ export function parse(source: string): ParseResult {
     }
   }
 
+  if (options.dialect) {
+    diagnostics.push(...enforceDialect(root, options.dialect));
+    diagnostics.push(...enforceProps(root, options.dialect.props));
+  }
+
   return { root, diagnostics };
 }
 
@@ -816,6 +908,9 @@ interface ConditionalHeaderResult {
   inlineBody?: string;
   inlineColumn?: number;
   directiveLength: number;
+  token: string;
+  tokenSpan?: SourceSpan;
+  testSpan?: SourceSpan;
 }
 
 function parseConditionalHeader(
@@ -841,7 +936,10 @@ function parseConditionalHeader(
     );
     return null;
   }
-  const test = match[1].trim();
+  const token = kind === "if" ? "@if" : "@elseIf";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
+  const testRaw = match[1];
+  const test = testRaw.trim();
   if (!test) {
     pushDiag(
       diagnostics,
@@ -854,6 +952,10 @@ function parseConditionalHeader(
     );
     return null;
   }
+  const openParenIndex = trimmed.indexOf("(", token.length);
+  const testLeadingWhitespace = testRaw.length - testRaw.trimStart().length;
+  const testColumn = column + Math.max(openParenIndex, token.length) + 1 + testLeadingWhitespace;
+  const testSpan = createSpan(lineNumber, testColumn, test.length, lineOffset);
   const remainderRaw = match[2] ?? "";
   const inlineBody = remainderRaw.trim();
   const remainderOffset = trimmed.length - remainderRaw.length;
@@ -864,7 +966,10 @@ function parseConditionalHeader(
     test,
     inlineBody: inlineBody.length ? inlineBody : undefined,
     inlineColumn,
-    directiveLength: trimmed.length || 3
+    directiveLength: trimmed.length || 3,
+    token,
+    tokenSpan,
+    testSpan
   };
 }
 
@@ -889,6 +994,8 @@ function parseElseHeader(
     );
     return null;
   }
+  const token = "@else";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const remainderRaw = match[1] ?? "";
   const inlineBody = remainderRaw.trim();
   const remainderOffset = trimmed.length - remainderRaw.length;
@@ -898,13 +1005,18 @@ function parseElseHeader(
   return {
     inlineBody: inlineBody.length ? inlineBody : undefined,
     inlineColumn,
-    directiveLength: trimmed.length || 4
+    directiveLength: trimmed.length || 4,
+    token,
+    tokenSpan
   };
 }
 
 interface ForHeaderResult {
   itemName: string;
   arrayExpr: string;
+  token: string;
+  tokenSpan?: SourceSpan;
+  arrayExprSpan?: SourceSpan;
 }
 
 function parseForHeader(
@@ -928,6 +1040,8 @@ function parseForHeader(
     );
     return null;
   }
+  const token = "@for";
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const itemName = match[1];
   const arrayExprRaw = match[2];
   if (!itemName || !arrayExprRaw) {
@@ -955,7 +1069,11 @@ function parseForHeader(
     );
     return null;
   }
-  return { itemName, arrayExpr };
+  const arrayExprLeadingWhitespace = arrayExprRaw.length - arrayExprRaw.trimStart().length;
+  const arrayExprStart = trimmed.length - arrayExprRaw.length;
+  const arrayExprColumn = column + arrayExprStart + arrayExprLeadingWhitespace;
+  const arrayExprSpan = createSpan(lineNumber, arrayExprColumn, arrayExpr.length, lineOffset);
+  return { itemName, arrayExpr, token, tokenSpan, arrayExprSpan };
 }
 
 function parseInlineNode(
@@ -1100,7 +1218,14 @@ function parseTextPayload(
             exprEnd - exprStart
           );
         } else {
-          parts.push({ type: "expr", value: inner });
+          const innerRaw = payload.slice(exprStart + 2, exprEnd);
+          const leadingWhitespace = innerRaw.length - innerRaw.trimStart().length;
+          const exprColumn = payloadColumn + exprStart + 2 + leadingWhitespace;
+          parts.push({
+            type: "expr",
+            value: inner,
+            span: createSpan(lineNumber, exprColumn, inner.length, lineOffset)
+          });
         }
         cursor = exprEnd + 2;
         continue;
@@ -1132,7 +1257,14 @@ function parseTextPayload(
           exprEnd - exprStart
         );
       } else {
-        parts.push({ type: "expr", value: inner });
+        const innerRaw = payload.slice(exprStart + 1, exprEnd);
+        const leadingWhitespace = innerRaw.length - innerRaw.trimStart().length;
+        const exprColumn = payloadColumn + exprStart + 1 + leadingWhitespace;
+        parts.push({
+          type: "expr",
+          value: inner,
+          span: createSpan(lineNumber, exprColumn, inner.length, lineOffset)
+        });
       }
       cursor = exprEnd + 1;
       continue;
@@ -1220,8 +1352,14 @@ function parseExpressionLine(
     );
     return null;
   }
-
-  return { type: "Expression", value: inner };
+  const innerRaw = trimmed.slice(2, closeIndex);
+  const leadingWhitespace = innerRaw.length - innerRaw.trimStart().length;
+  const exprColumn = column + 2 + leadingWhitespace;
+  return {
+    type: "Expression",
+    value: inner,
+    span: createSpan(lineNumber, exprColumn, inner.length, lineOffset)
+  };
 }
 
 function parseJSXPassthrough(
@@ -1247,8 +1385,16 @@ function parseJSXPassthrough(
     );
     return null;
   }
-  
-  return { type: "JSXPassthrough", expression: payload };
+
+  const rawPayload = line.slice(1);
+  const leadingWhitespace = rawPayload.length - rawPayload.trimStart().length;
+  const exprColumn = column + 1 + leadingWhitespace;
+
+  return {
+    type: "JSXPassthrough",
+    expression: payload,
+    span: createSpan(lineNumber, exprColumn, payload.length, lineOffset)
+  };
 }
 
 
@@ -1291,7 +1437,8 @@ function parsePropsField(
   return {
     name,
     optional: optionalFlag === "?",
-    typeText
+    typeText,
+    span: createSpan(lineNumber, column, Math.max(line.length, 1), lineOffset)
   };
 }
 
@@ -1561,6 +1708,7 @@ function parseElement(
 
   // Parse optional guard expression
   let guard: string | undefined;
+  let guardSpan: SourceSpan | undefined;
   const guardProbeStart = cursor;
   while (cursor < line.length && /\s/.test(line[cursor])) {
     cursor++;
@@ -1568,7 +1716,8 @@ function parseElement(
   if (cursor < line.length && line[cursor] === "?") {
     const guardColumn = column + cursor;
     cursor++;
-    const guardExpr = line.slice(cursor).trim();
+    const guardRaw = line.slice(cursor);
+    const guardExpr = guardRaw.trim();
     if (!guardExpr) {
       pushDiag(
         diagnostics,
@@ -1580,6 +1729,9 @@ function parseElement(
       );
     } else {
       guard = guardExpr;
+      const leadingWhitespace = guardRaw.length - guardRaw.trimStart().length;
+      const guardExprColumn = column + cursor + leadingWhitespace;
+      guardSpan = createSpan(lineNumber, guardExprColumn, guardExpr.length, lineOffset);
     }
     cursor = line.length;
   } else {
@@ -1607,6 +1759,7 @@ function parseElement(
     };
     if (guard) {
       component.guard = guard;
+      component.guardSpan = guardSpan;
     }
     return component;
   } else {
@@ -1622,6 +1775,7 @@ function parseElement(
     }
     if (guard) {
       element.guard = guard;
+      element.guardSpan = guardSpan;
     }
     return element;
   }

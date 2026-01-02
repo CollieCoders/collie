@@ -1,5 +1,16 @@
 # @collie-lang/compiler
 
+## 6.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/config@1.0.0
+
 ## 4.0.0
 
 ### Major Changes

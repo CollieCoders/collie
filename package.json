@@ -13,8 +13,11 @@
     "publish-packages": "changeset publish",
     "prepare:cdn": "pnpm --filter @collie-lang/html-runtime prepare-cdn",
     "release:cdn": "pnpm --filter @collie-lang/html-runtime release:cdn",
-    "test": "pnpm -r --filter='@collie-lang/*' test && vitest run tests",
-    "test:integration": "vitest run tests"
+    "test": "pnpm -r --filter='@collie-lang/*' test && pnpm -C packages/collie-tests test",
+    "test:collie": "pnpm -C packages/collie-tests test",
+    "test:cli": "pnpm -C packages/collie-tests test:cli",
+    "test:integration": "pnpm -C packages/collie-tests test",
+    "test:watch": "pnpm -C packages/collie-tests test:watch"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",
@@ -22,11 +25,13 @@
     "rimraf": "^6.0.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
-    "vitest": "^1.6.0"
+    "vite": "^7.3.0",
+    "vitest": "^4.0.16"
   },
   "pnpm": {
     "overrides": {
-      "vite": "^7.3.0"
+      "vite": "^7.3.0",
+      "vitest": "^4.0.16"
     }
   }
 }

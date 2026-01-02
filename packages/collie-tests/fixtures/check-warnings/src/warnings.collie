@@ -1,0 +1,8 @@
+props
+  name: string = "World"
+
+div class="welcome"
+  h1
+    Hello {{ name }}
+  p
+    This template should parse cleanly.

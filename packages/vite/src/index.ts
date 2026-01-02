@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import type { Plugin } from "vite";
+import type { HmrContext, Plugin } from "vite";
 import { transformWithEsbuild } from "vite";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { compileToTsx } from "@collie-lang/compiler";
@@ -26,8 +26,9 @@ function toComponentNameHint(id: string): string {
 }
 
 function formatDiagnostic(id: string, diagnostic: Diagnostic): string {
-  const file = diagnostic.file ?? stripQuery(id);
-  const where = diagnostic.span ? `${diagnostic.span.start.line}:${diagnostic.span.start.col}` : "";
+  const file = diagnostic.filePath ?? diagnostic.file ?? stripQuery(id);
+  const range = diagnostic.range ?? diagnostic.span;
+  const where = range ? `${range.start.line}:${range.start.col}` : "";
   const location = where ? `${file}:${where}` : file;
   const code = diagnostic.code ? diagnostic.code : "COLLIE";
   return `${location} [${code}] ${diagnostic.message}`;
@@ -73,6 +74,19 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         code: transformed.code,
         map: transformed.map ?? null
       };
+    },
+
+    handleHotUpdate(ctx: HmrContext) {
+      if (!isCollieFile(ctx.file)) {
+        return;
+      }
+
+      for (const mod of ctx.modules) {
+        ctx.server.moduleGraph.invalidateModule(mod);
+      }
+
+      ctx.server.ws.send({ type: "full-reload", path: ctx.file });
+      return [];
     }
   };
 }

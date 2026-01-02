@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { generateModule } from "./codegen";
 import { generateHtml } from "./html-codegen";
 import { normalizeIdentifierValue } from "./identifier";
@@ -9,13 +10,26 @@ import type { RootNode } from "./ast";
 
 export type {
   CollieConfig,
+  CollieCssOptions,
+  CollieCssStrategy,
+  CollieDialectOptions,
+  CollieDialectPropsOptions,
+  CollieDialectTokenKind,
+  CollieDialectTokenRule,
+  CollieDialectTokens,
+  CollieDiagnosticLevel,
   CollieProjectConfig,
   CollieCompilerOptions,
   CollieFeatureOptions,
   CollieEditorOptions,
   HtmlProjectOptions,
   ReactProjectOptions,
+  NormalizedCollieCssOptions,
   NormalizedCollieConfig,
+  NormalizedCollieDialectOptions,
+  NormalizedCollieDialectPropsOptions,
+  NormalizedCollieDialectTokenRule,
+  NormalizedCollieDialectTokens,
   NormalizedCollieProjectConfig
 } from "@collie-lang/config";
 export {
@@ -27,10 +41,12 @@ export {
 
 export type {
   Diagnostic,
+  DiagnosticFix,
   DiagnosticSeverity,
   SourcePos,
   SourceSpan
 } from "./diagnostics";
+export { applyFixes, fixAllFromDiagnostics } from "./fixes";
 export type { ParseResult } from "./parser";
 export type {
   Attribute,
@@ -53,14 +69,20 @@ export type {
   TextNode,
   TextPart
 } from "./ast";
+export type { FormatOptions, FormatResult } from "./format";
+export { formatCollie } from "./format";
+export type { ConvertTsxOptions, ConvertTsxResult } from "./convert";
+export { convertTsxToCollie } from "./convert";
 
 export interface ParseCollieOptions {
   filename?: string;
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 export interface BaseCompileOptions {
   filename?: string;
   componentNameHint?: string;
+  dialect?: NormalizedCollieDialectOptions;
 }
 
 export interface JsxCompileOptions extends BaseCompileOptions {
@@ -88,23 +110,29 @@ export interface CompileResult {
   meta?: CollieCompileMeta;
 }
 
+export interface ConvertCollieResult {
+  tsx: string;
+  diagnostics: Diagnostic[];
+  meta?: CollieCompileMeta;
+}
+
 export type CollieDocument = ParseResult;
 export type CompileOptions = JsxCompileOptions;
 
 export function parseCollie(source: string, options: ParseCollieOptions = {}): CollieDocument {
-  const result = parse(source);
+  const result = parse(source, { dialect: options.dialect });
   if (!options.filename) {
-    return result;
+    return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics) };
   }
-  return { root: result.root, diagnostics: attachFilename(result.diagnostics, options.filename) };
+  return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics, options.filename) };
 }
 
 export function compileToJsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: JsxCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
@@ -121,8 +149,8 @@ export function compileToTsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: TsxCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
@@ -135,12 +163,21 @@ export function compileToTsx(
   return { code, diagnostics, map: undefined, meta };
 }
 
+export function convertCollieToTsx(source: string, options: TsxCompileOptions = {}): ConvertCollieResult {
+  const result = compileToTsx(source, options);
+  return {
+    tsx: result.code,
+    diagnostics: result.diagnostics,
+    meta: result.meta
+  };
+}
+
 export function compileToHtml(
   sourceOrAst: string | RootNode | CollieDocument,
   options: HtmlCompileOptions = {}
 ): CompileResult {
-  const document = normalizeDocument(sourceOrAst, options.filename);
-  const diagnostics = options.filename ? attachFilename(document.diagnostics, options.filename) : document.diagnostics;
+  const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
+  const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
 
   let code = createStubHtml();
   if (!hasErrors(diagnostics)) {
@@ -159,10 +196,11 @@ export { parseCollie as parse };
 
 function normalizeDocument(
   sourceOrAst: string | RootNode | CollieDocument,
-  filename?: string
+  filename?: string,
+  dialect?: NormalizedCollieDialectOptions
 ): CollieDocument {
   if (typeof sourceOrAst === "string") {
-    return parseCollie(sourceOrAst, { filename });
+    return parseCollie(sourceOrAst, { filename, dialect });
   }
 
   if (isCollieDocument(sourceOrAst)) {
@@ -239,8 +277,24 @@ function deriveIdentifierFromFilename(filename?: string): string | undefined {
 }
 
 function attachFilename(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {
-  if (!filename) {
-    return diagnostics;
-  }
-  return diagnostics.map((diag) => (diag.file ? diag : { ...diag, file: filename }));
+  return normalizeDiagnostics(diagnostics, filename);
+}
+
+function normalizeDiagnostics(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {
+  return diagnostics.map((diag) => {
+    const filePath = diag.filePath ?? diag.file ?? filename;
+    const file = diag.file ?? filename;
+    const range = diag.range ?? diag.span;
+
+    if (filePath === diag.filePath && file === diag.file && range === diag.range) {
+      return diag;
+    }
+
+    return {
+      ...diag,
+      filePath,
+      file,
+      range
+    };
+  });
 }

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import { printSummary } from "./output";
 
 export type DiagnosticStatus = "pass" | "fail" | "warn";
 
@@ -85,16 +86,18 @@ export function filterDiagnostics(results: DiagnosticResult[], filter?: string):
 }
 
 export function printDoctorResults(results: DiagnosticResult[]): void {
-  console.log(pc.bold("Collie Doctor - Diagnosing your environment...\n"));
+  console.log(pc.bold("collie doctor"));
+  console.log(pc.dim("Diagnosing your environment..."));
+  console.log("");
   let errors = 0;
   let warnings = 0;
 
   for (const result of results) {
     const icon =
-      result.status === "pass" ? pc.green("✔") : result.status === "warn" ? pc.yellow("⚠") : pc.red("✘");
+      result.status === "pass" ? pc.green("✔") : result.status === "warn" ? pc.yellow("⚠") : pc.red("✖");
     console.log(`${icon} ${result.check}: ${result.message}`);
     if (result.fix) {
-      console.log(pc.gray(`  → Fix: ${result.fix}`));
+      console.log(pc.dim(`  Fix: ${result.fix}`));
     }
     console.log("");
     if (result.status === "fail") {
@@ -105,14 +108,19 @@ export function printDoctorResults(results: DiagnosticResult[]): void {
   }
 
   if (errors === 0 && warnings === 0) {
-    console.log(pc.green("🎉 Everything looks good!"));
-  } else {
-    const summary: string[] = [];
-    if (errors > 0) summary.push(`${errors} error${errors === 1 ? "" : "s"}`);
-    if (warnings > 0) summary.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
-    console.log(pc.red(summary.join(", ")));
-    console.log("Run the suggested fixes and try again.");
+    printSummary("success", "All checks passed", "no changes made", "continue with collie check or collie build");
+    return;
   }
+
+  const summary: string[] = [];
+  if (errors > 0) summary.push(`${errors} error${errors === 1 ? "" : "s"}`);
+  if (warnings > 0) summary.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+  printSummary(
+    errors > 0 ? "error" : "warning",
+    `Doctor found ${summary.join(" and ")}`,
+    "no changes made",
+    "address the items above and rerun collie doctor"
+  );
 }
 
 function checkNodeVersion(): DiagnosticResult {
