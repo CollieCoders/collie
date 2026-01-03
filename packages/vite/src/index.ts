@@ -28,6 +28,8 @@ interface TemplateRecord {
 
 const VIRTUAL_REGISTRY_ID = "virtual:collie/registry";
 const VIRTUAL_REGISTRY_RESOLVED = "\0collie:registry";
+const VIRTUAL_IDS_ID = "virtual:collie/ids";
+const VIRTUAL_IDS_RESOLVED = "\0collie:ids";
 const VIRTUAL_TEMPLATE_PREFIX = "virtual:collie/template/";
 const VIRTUAL_TEMPLATE_RESOLVED_PREFIX = "\0collie:template:";
 const COLLIE_GLOB = "**/*.collie";
@@ -227,7 +229,13 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       if (cleanId === VIRTUAL_REGISTRY_ID) {
         return VIRTUAL_REGISTRY_RESOLVED;
       }
+      if (cleanId === VIRTUAL_IDS_ID) {
+        return VIRTUAL_IDS_RESOLVED;
+      }
       if (cleanId === VIRTUAL_REGISTRY_RESOLVED) {
+        return cleanId;
+      }
+      if (cleanId === VIRTUAL_IDS_RESOLVED) {
         return cleanId;
       }
       if (cleanId.startsWith(VIRTUAL_TEMPLATE_PREFIX)) {
@@ -259,7 +267,28 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
             )}),`
         );
         return {
-          code: `export const registry = {\n${lines.join("\n")}\n};`,
+          code: [
+            "/** @type {Record<string, () => Promise<{ render: (props: any) => any }>>} */",
+            `export const registry = {\n${lines.join("\n")}\n};`
+          ].join("\n"),
+          map: null
+        };
+      }
+
+      if (cleanId === VIRTUAL_IDS_RESOLVED) {
+        try {
+          await ensureTemplates(this);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          this.error(err);
+        }
+
+        const ids = Array.from(templatesById.keys()).sort((a, b) => a.localeCompare(b));
+        return {
+          code: [
+            "/** @type {readonly string[]} */",
+            `export const ids = ${JSON.stringify(ids)};`
+          ].join("\n"),
           map: null
         };
       }

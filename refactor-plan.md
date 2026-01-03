@@ -572,6 +572,23 @@ This is the foundational Vite shift. It establishes the build-time registry with
 
 # Stage A5b — Vite Plugin Integration: Make Registry Consumable by `@collie-lang/react` Runtime
 
+## You may ONLY touch/modify the following:
+
+* `packages/vite/src/index.ts`
+* `packages/vite/README.md` *(only if you need to clarify the registry export shape; keep minimal)*
+* `packages/collie-react/src/index.tsx` *(only if you must adjust runtime expectations to match the registry shape; otherwise leave it alone)*
+* `packages/collie-react/src/registry.d.ts` *(only if type contracts need to be updated to match the finalized registry/module shapes)*
+* `packages/compiler/src/index.ts` *(only if you need to adjust exported types used by the Vite plugin/runtime boundary; avoid logic changes)*
+* `ARCHITECTURE.md` *(only if you need to update the contract description; keep it small)*
+
+## Explicitly **DO NOT** touch:
+
+* `packages/cli/**`
+* `packages/config/**`
+* `packages/next/**`, `packages/webpack/**`, `packages/expo/**`, `packages/storybook/**`
+* `packages/compiler/src/parser.ts`, `packages/compiler/src/codegen.ts`, `packages/compiler/src/props.ts` *(no compiler behavior changes in A5b)*
+* `packages/collie-tests/**` *(no fixture changes here)*
+
 **Complete: 0%**
 
 ### Why this stage exists
@@ -622,6 +639,25 @@ The runtime component can rely on a stable registry contract and not implement V
 ---
 
 # Stage A5c — Early Quarantine: Hard-Disable Legacy .collie Imports and Component-Export Paths
+
+## You may ONLY touch/modify the following:
+
+* `packages/vite/src/index.ts`
+* `packages/vite/README.md` *(only where it shows direct `.collie` imports; keep it limited to “first impression” examples)*
+* Top-level docs that directly teach the old import model (only if they exist):
+
+  * `README.md`
+  * `docs/migration.md` *(only if it currently mentions legacy imports)*
+  * `docs/examples/**` *(only where it demonstrates direct `.collie` import)*
+* *(Optional, only if necessary)* `ARCHITECTURE.md` *(add the “direct imports disabled” note; do not rewrite the doc)*
+
+## Explicitly **DO NOT** touch:
+
+* `packages/compiler/**` *(no compiler export reshaping here unless it’s purely comment/deprecation, and even then prefer leaving it for A8)*
+* `packages/collie-react/**` *(no runtime changes during quarantine unless required to keep build green)*
+* `packages/cli/**`
+* `packages/collie-tests/**` *(don’t “fix tests” by changing fixtures in this stage)*
+* any non-vite integration packages (`next`, `webpack`, `expo`, `storybook`)
 
 **Complete: 0%**
 
@@ -810,6 +846,23 @@ After this stage:
 
 # Stage A5d — Vite Plugin HMR: Targeted Invalidation and No Refresh Loops
 
+## You may ONLY touch/modify the following:
+
+* `packages/vite/src/index.ts`
+
+## Allowed only if strictly required for types (prefer not)
+
+* `packages/vite/package.json` *(only if you must adjust Vite peer dependency metadata; avoid unless a real incompatibility is found)*
+* `packages/vite/README.md` *(only if you must document one critical dev-time HMR behavior; keep it tiny)*
+
+## Explicitly **DO NOT** touch:
+
+* `packages/compiler/**` *(no compiler changes while debugging HMR)*
+* `packages/collie-react/**`
+* `packages/cli/**`
+* `packages/collie-tests/**` *(don’t alter tests to “make HMR pass”)*
+* top-level docs (`README.md`, `ARCHITECTURE.md`) unless absolutely necessary
+
 **Complete: 0%**
 
 ### Why this stage exists
@@ -877,85 +930,25 @@ Editing a `.collie` file updates templates in dev without requiring a server res
 
 ---
 
-# Stage A6 — Rewrite `@collie-lang/vite` to Build Registry + Enforce Global Unique IDs
+# Stage A6 — Update CLI Commands + Project Templates for New Workflow
 
-**Complete: 0%**
+## You may ONLY touch/modify the following:
 
-### Why this stage exists
+* `packages/cli/src/index.ts`
+* `packages/cli/src/checker.ts` *(if ids/explain reuse checker logic)*
+* `packages/cli/src/output.ts`
+* `packages/cli/src/fs-utils.ts`
+* `packages/cli/src/doctor.ts` *(only if you add references/help text to the new commands)*
+* `packages/cli/README.md`
+* `README.md` *(only if you surface the new commands there)*
 
-This is the “core shift.” It replaces component-name-based import semantics with registry-based id resolution.
+## Explicitly **DO NOT** touch:
 
-### Scope
-
-Refactor Vite plugin to:
-
-* discover `.collie`
-* parse all templates
-* compile each template unit into a module exporting `render(props)`
-* emit `virtual:collie/registry`
-
-### Deliverables
-
-1. **Discovery**
-
-   * Default include: `**/*.collie`
-   * Default exclude: `node_modules/**`, `dist/**`, `build/**`, output dirs, and any existing Collie outDir.
-   * Use plugin options and/or Collie config if you already have config loading.
-
-2. **Global ID uniqueness**
-
-   * Build a map: `id -> { file, line, col }`
-   * If duplicates:
-
-     * throw a single error listing all duplicates and their locations
-     * fail the build (dev should show overlay)
-
-3. **Virtual module: `virtual:collie/registry`**
-
-   * Export:
-
-     * `export const registry = { [id]: () => import(compiledPathForId) }`
-   * Prefer lazy loaders to enable code splitting.
-
-4. **Template module generation**
-
-   * For each template unit, generate a stable module id/path.
-   * Recommend virtual submodules:
-
-     * `virtual:collie/template/<safeEncodedId>`
-   * The plugin can implement `resolveId`/`load` for these template module ids and return the compiled code string from compiler.
-
-5. **HMR**
-
-   * On `.collie` file change:
-
-     * re-parse templates from that file
-     * update registry content
-     * invalidate affected template virtual modules
-     * invalidate registry module
-   * Full reload acceptable early, but **must not** cause an infinite refresh loop.
-
-6. **Remove conflicting legacy behavior**
-
-   * The plugin should no longer primarily transform `.collie` file imports into components.
-   * If you keep a compatibility path internally, it must not be documented and must not interfere with registry.
-
-### Expected Outcome
-
-Vite app can run with:
-
-* `.collie` templates anywhere in repo
-* `<Collie id="...">` resolves them via the registry
-
-### Acceptance Criteria
-
-* Build works without importing `.collie` files directly.
-* Duplicate IDs throw a clean error listing both locations.
-* Editing a `.collie` file updates output in dev without breaking dev server.
-
----
-
-# Stage A7 — Update CLI Commands + Project Templates for New Workflow
+* `packages/vite/**`
+* `packages/collie-react/**`
+* `packages/compiler/**`
+* `packages/collie-tests/**`
+* templates under `packages/cli/templates/**` *(unless you’re explicitly adding the new commands into template docs)*
 
 **Complete: 0%**
 
@@ -1008,7 +1001,36 @@ A new user running `collie create` (or reading docs) sees the right pattern and 
 
 ---
 
-# Stage A8 — Final Cleanup: Delete Legacy Code, Tighten APIs, and Normalize the Repo
+# Stage A7 — Final Cleanup: Delete Legacy Code, Tighten APIs, and Normalize the Repo
+
+## You may ONLY touch/modify the following:
+
+* `packages/vite/src/index.ts` *(remove any remaining legacy paths, delete legacy folder if created)*
+* `packages/vite/README.md`
+* `packages/compiler/src/index.ts`
+* `packages/compiler/src/*` *(only files directly related to deprecated exports/wrappers — do not touch parser/codegen unless removing dead wrapper entry points)*
+
+  * likely candidates (only if they contain legacy wrappers):
+
+    * `packages/compiler/src/convert.ts`
+    * `packages/compiler/src/index.ts`
+    * `packages/compiler/src/codegen.ts` *(only if removing clearly dead legacy entry points)*
+* `packages/collie-react/src/index.tsx` *(only if removing legacy compatibility behaviors)*
+* `packages/collie-react/README.md`
+* Top-level docs that still mention legacy model:
+
+  * `README.md`
+  * `ARCHITECTURE.md`
+  * `docs/examples/**`
+  * `docs/migration.md`
+
+## Explicitly **DO NOT** touch:
+
+* `packages/cli/src/**` *(unless deleting CLI flags/options that only existed for legacy component-import flow; if so, keep it minimal and limited to those files)*
+* `packages/config/**` *(unless you are explicitly deleting config keys tied to the legacy model)*
+* `packages/next/**`, `packages/expo/**`, `packages/webpack/**`, `packages/storybook/**`
+* `packages/html-runtime/**`
+* `packages/collie-tests/**` *(do not “fix failing tests” by changing fixtures broadly; only update fixtures that are explicitly incompatible with the new model, and do it minimally)*
 
 **Complete: 0%**
 
