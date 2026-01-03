@@ -14,41 +14,9 @@ import type {
   TextNode
 } from "./ast";
 
-export interface CodegenOptions {
-  componentName: string;
-  jsxRuntime: "automatic" | "classic";
-  flavor: "jsx" | "tsx";
-}
-
 export interface RenderCodegenOptions {
   jsxRuntime: "automatic" | "classic";
   flavor: "jsx" | "tsx";
-}
-
-export function generateModule(root: RootNode, options: CodegenOptions): string {
-  const { componentName } = options;
-  const { prelude, propsType, propsDestructure, jsx, isTsx } = buildModuleParts(root, options);
-
-  const parts: string[] = [...prelude, propsType];
-
-  if (!isTsx) {
-    // JS-safe param typing (JSDoc), so tooling can still understand Props.
-    parts.push(`/** @param {Props} props */`);
-  }
-
-  // IMPORTANT: Do not emit TypeScript annotations here.
-  const functionLines = [
-    isTsx
-      ? `export default function ${componentName}(props: Props) {`
-      : `export default function ${componentName}(props) {`
-  ];
-  if (propsDestructure) {
-    functionLines.push(`  ${propsDestructure}`);
-  }
-  functionLines.push(`  return ${jsx};`, `}`);
-  parts.push(functionLines.join("\n"));
-
-  return parts.join("\n\n");
 }
 
 export function generateRenderModule(root: RootNode, options: RenderCodegenOptions): string {

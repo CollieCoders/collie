@@ -1,6 +1,6 @@
 # Collie Architecture (Registry + `<Collie id>` Runtime)
 
-This repo is shifting toward a **registry-driven runtime model**. The goal is for every `.collie` file to describe **one or more templates** that are addressed by a global ID, and for React to render them via a single, prop-aware `<Collie id="...">` component. The old approach of compiling `.collie` files into importable React components is deprecated and will be removed later.
+This repo uses a **registry-driven runtime model**. Every `.collie` file describes **one or more templates** addressed by a global ID, and React renders them via a single, prop-aware `<Collie id="...">` component. Direct `.collie` imports are not supported.
 
 ## Template files
 
@@ -90,6 +90,4 @@ export function App() {
 
 The `Collie` component looks up `nav.auth` in the registry, loads the compiled `render(props)` module, and renders it with the provided props.
 
-## Legacy workflow (deprecated)
-
-The legacy model—importing a `.collie` file as a React component (e.g. `import Welcome from './Welcome.collie'`) or deriving component names from filenames—is intentionally unsupported in the new plan. Future stages will remove these code paths entirely. For now, treat any remaining references in docs as deprecated guidance and migrate to the `<Collie id="...">` model with the global registry.
+Direct `.collie` imports are disabled. The registry workflow is the only supported integration.

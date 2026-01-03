@@ -50,6 +50,7 @@ Collie uses a tiny registry runtime while keeping templates as plain JSX/TSX ren
 ### `Welcome.collie`
 
 ```collie
+#id welcome.hero
 #props
   name: string
   isMember: boolean
@@ -71,7 +72,17 @@ div.hero
       Join Now
 ```
 
-This compiles to idiomatic TSX with clean indentation, no surprises.
+Use it from React via the registry runtime:
+
+```tsx
+import { Collie } from '@collie-lang/react'
+
+export function App() {
+  return <Collie id="welcome.hero" name="Josh" isMember />
+}
+```
+
+This compiles to idiomatic TSX render modules with clean indentation, no surprises.
 
 ---
 
@@ -233,6 +244,8 @@ Additional guides live under [`docs/`](docs), including a [framework migration g
 ## 🧬 Language Overview
 
 Collie is opinionated but not restrictive:
+
+All full templates must start with a `#id` block; snippets below omit it for brevity.
 
 ### **Blocks**
 

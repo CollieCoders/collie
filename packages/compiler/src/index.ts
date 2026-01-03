@@ -80,6 +80,7 @@ export interface ParseCollieOptions {
 
 export interface BaseCompileOptions {
   filename?: string;
+  /** @deprecated Legacy component module option. */
   componentNameHint?: string;
   dialect?: NormalizedCollieDialectOptions;
 }
@@ -123,6 +124,7 @@ export interface CompileTemplateOptions {
 }
 
 export type CollieDocument = ParseResult;
+/** @deprecated Legacy component-compile options. Prefer CompileTemplateOptions. */
 export type CompileOptions = JsxCompileOptions;
 
 export function parseCollie(source: string, options: ParseCollieOptions = {}): CollieDocument {
@@ -162,7 +164,10 @@ export function compileTemplate(
   return { code, diagnostics, map: undefined, meta };
 }
 
-/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
+/**
+ * @deprecated Legacy component module wrapper.
+ * Use compileTemplate for registry-driven render modules.
+ */
 export function compileToJsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: JsxCompileOptions = {}
@@ -187,7 +192,10 @@ export function compileToJsx(
   return { code, diagnostics, map: undefined, meta };
 }
 
-/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
+/**
+ * @deprecated Legacy component module wrapper.
+ * Use compileTemplate for registry-driven render modules.
+ */
 export function compileToTsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: TsxCompileOptions = {}
@@ -212,7 +220,10 @@ export function compileToTsx(
   return { code, diagnostics, map: undefined, meta };
 }
 
-/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
+/**
+ * @deprecated Legacy component module wrapper.
+ * Use compileTemplate for registry-driven render modules.
+ */
 export function convertCollieToTsx(source: string, options: TsxCompileOptions = {}): ConvertCollieResult {
   const result = compileToTsx(source, options);
   return {
@@ -239,7 +250,10 @@ export function compileToHtml(
   return { code, diagnostics, map: undefined, meta };
 }
 
-/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
+/**
+ * @deprecated Legacy component module wrapper.
+ * Use compileTemplate for registry-driven render modules.
+ */
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
   return compileToJsx(source, options);
 }
