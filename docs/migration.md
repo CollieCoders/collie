@@ -4,8 +4,8 @@
 
 Collie templates (`.collie` files) are framework-agnostic and can be used in both Vite and Next.js projects without modification. Only your build tooling changes.
 
-> ⚠️ **Legacy workflow warning**  
-> This guide still presumes `.collie` files are imported as React components. The new registry-oriented workflow with `<Collie id="...">` is documented in `ARCHITECTURE.md`. Treat the import-based examples below as temporarily deprecated and slated for revision.
+> ⚠️ **Registry workflow**  
+> Direct `.collie` imports are disabled. The new registry-oriented workflow with `<Collie id="...">` is documented in `ARCHITECTURE.md`. Registry support currently targets Vite; Next.js integration is being updated.
 
 ## From Vite to Next.js
 
@@ -40,13 +40,9 @@ Move files to the Next.js layout:
 - `src/App.tsx` ➜ `src/app/page.tsx`
 - Keep `.collie` components under `src/components/`
 
-### 4. Update Imports
+### 4. Update Usage
 
-No changes needed! Collie imports continue to work:
-
-```ts
-import Card from '@/components/Card.collie';
-```
+The registry workflow is not yet supported in Next.js. If you must target Next.js today, you will need to stay on the legacy import flow (not covered here).
 
 ## From Next.js to Vite
 
@@ -56,6 +52,7 @@ import Card from '@/components/Card.collie';
 pnpm remove next @collie-lang/next @collie-lang/webpack
 pnpm add vite @vitejs/plugin-react
 pnpm add -D @collie-lang/vite
+pnpm add @collie-lang/react
 ```
 
 ### 2. Update Configuration
@@ -78,9 +75,17 @@ export default defineConfig({
 - Create `src/main.tsx` that renders `<App />`
 - Add `index.html` with a root element
 
-### 4. Update Imports
+### 4. Update Usage
 
-Still no changes. Collie components continue compiling via the Vite plugin.
+Replace any legacy `.collie` imports with the registry runtime:
+
+```tsx
+import { Collie } from '@collie-lang/react'
+
+export function App() {
+  return <Collie id="app.hero" />
+}
+```
 
 ## Framework-Specific Features
 

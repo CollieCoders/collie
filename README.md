@@ -5,8 +5,8 @@ It brings the readability of Pug, the structure of modern component systems, and
 
 Collie templates compile directly to **clean, predictable JSX/TSX**, integrate seamlessly with **Vite**, and work flawlessly inside any modern React stack.
 
-> ⚠️ **Legacy workflow (deprecated)**  
-> This README currently references the previous `.collie` → component import flow. See `ARCHITECTURE.md` for the new registry-based `<Collie id="...">` runtime. Direct `.collie` imports and component-name-based addressing will be removed in later stages.
+> ⚠️ **Registry workflow**  
+> Direct `.collie` imports are disabled. Use the registry-based `<Collie id="...">` runtime described in `ARCHITECTURE.md`.
 
 ---
 
@@ -26,7 +26,7 @@ JSX is powerful—but also noisy, deeply nested, and difficult to scan. Collie f
 No closing tags. No angle-bracket soup. Just indentation.
 
 ### **2. First-class React compatibility**
-Every `.collie` file compiles to JSX or TSX that you can drop directly into your components.
+Templates compile to render modules that the `<Collie id="...">` runtime loads on demand.
 
 ### **3. Built-in ergonomics**
 - `#props` block for typed props  
@@ -40,8 +40,8 @@ Every `.collie` file compiles to JSX or TSX that you can drop directly into your
 - **CLI** (`collie build`, `collie check`, etc.)  
 - **Full VS Code extension** (syntax, semantic tokens, formatting, diagnostics, conversions)
 
-### **5. Zero-runtime templates**
-Collie compiles to JSX—no custom runtime, no hydration weirdness, no proprietary component model.
+### **5. Minimal runtime**
+Collie uses a tiny registry runtime while keeping templates as plain JSX/TSX render functions.
 
 ---
 
@@ -83,7 +83,7 @@ This repo uses **pnpm workspaces** and contains all official Collie tooling:
 packages/
   collie-react – React runtime `<Collie id>` component backed by the build-time registry
   compiler   – Collie parser, AST, printer, and JSX generator
-  vite       – Vite plugin for `.collie` → JSX transforms
+  vite       – Vite plugin that builds the template registry + virtual modules
   webpack    – Webpack loader used by other tooling (e.g. Next.js)
   next       – Next.js plugin that wires the loader into the framework
   cli        – Collie CLI (build, watch, validate, scaffold projects)
@@ -93,9 +93,9 @@ Additional packages may be added in the future as Collie grows (language server,
 
 ## ✅ Supported Frameworks
 
-- **Vite** via `@collie-lang/vite`
-- **Next.js** via `@collie-lang/next`
-- Webpack-based environments can also consume `.collie` files directly through `@collie-lang/webpack`.
+- **Vite** via `@collie-lang/vite` (registry workflow)
+- **Next.js** via `@collie-lang/next` (legacy integration; registry support pending)
+- Webpack-based environments are legacy-only for now; registry integration is pending.
 
 ---
 
@@ -113,13 +113,11 @@ pnpm dlx @collie-lang/cli init --nextjs my-collie-next-app
 
 ### Manual Setup — Vite
 
-> ⚠️ **Deprecated setup**  
-> The steps below describe the legacy behavior of importing `.collie` files as React components. Refer to `ARCHITECTURE.md` to learn the new `<Collie id="...">` + `virtual:collie/registry` workflow; this section will be reworked in a later stage.
-
-1. Install the Vite plugin:
+1. Install the Vite plugin and runtime:
 
 ```bash
 pnpm add -D @collie-lang/vite
+pnpm add @collie-lang/react
 ```
 
 2. Enable it in `vite.config.ts`:
@@ -138,23 +136,32 @@ export default defineConfig({
 })
 ```
 
-3. Import `.collie` files anywhere in your app.
+3. Create a Collie file with template IDs (multi-template example):
+
+```collie
+#id app.hero
+div.hero
+  h1 {{ name }}
+
+#id app.cta
+button.primary {{ label }}
+```
+
+4. Render templates via the registry runtime:
 
 ```tsx
-import Welcome from './components/Welcome.collie'
+import { Collie } from '@collie-lang/react'
 
 export default function App() {
-  return (
-    <>
-      <Welcome name="Josh" isMember={true} />
-    </>
-  )
+  return <Collie id="app.hero" name="Josh" />
 }
 ```
 
+Templates are discovered automatically by `@collie-lang/vite`.
+
 ### Manual Setup — Next.js
 
-1. Install the Next.js plugin (and the underlying loader):
+1. Install the Next.js plugin (legacy integration):
 
 ```bash
 pnpm add -D @collie-lang/next @collie-lang/webpack
@@ -171,18 +178,7 @@ module.exports = withCollie({
 });
 ```
 
-3. Add `collie.d.ts` so TypeScript understands `.collie` imports:
-
-```ts
-// src/collie.d.ts
-declare module '*.collie' {
-  import type { ComponentType } from 'react';
-  const Component: ComponentType<Record<string, unknown>>;
-  export default Component;
-}
-```
-
-4. Import `.collie` files in either the App Router or Pages Router.
+3. Registry-based usage in Next.js is not yet supported. Prefer Vite for the new `<Collie id="...">` workflow.
 
 ---
 
@@ -204,10 +200,9 @@ The compiler is intended to be:
 
 ### **Vite Plugin (`@collie-lang/vite`)**
 
-* On-demand `.collie` → JSX transforms
+* Build-time registry generation
+* Virtual template modules that export `render(props)`
 * Sourcemaps for accurate file/line tracking
-* Fast mode (no formatting) for dev server
-* Full printer mode for production builds
 
 ### **CLI (`@collie-lang/cli`)**
 

@@ -4,7 +4,7 @@ import fg from "fast-glob";
 import type { HmrContext, Plugin, ResolvedConfig } from "vite";
 import { normalizePath, transformWithEsbuild } from "vite";
 import type { Diagnostic, TemplateUnit } from "@collie-lang/compiler";
-import { compileTemplate, compileToTsx, parseCollie } from "@collie-lang/compiler";
+import { compileTemplate, parseCollie } from "@collie-lang/compiler";
 
 type JsxRuntime = "automatic" | "classic";
 
@@ -44,11 +44,6 @@ function isCollieFile(id: string): boolean {
   return stripQuery(id).endsWith(".collie");
 }
 
-function toComponentNameHint(id: string): string {
-  const base = path.basename(stripQuery(id)).replace(/\.[^.]+$/, "");
-  return `${base.replace(/[^a-zA-Z0-9_$]/g, "")}Template`;
-}
-
 function toDisplayPath(filePath: string, root?: string): string {
   const normalized = normalizePath(filePath);
   if (!root || !path.isAbsolute(filePath)) {
@@ -69,6 +64,32 @@ function formatDiagnostic(id: string, diagnostic: Diagnostic, root?: string): st
   const location = where ? `${displayFile}:${where}` : displayFile;
   const code = diagnostic.code ? diagnostic.code : "COLLIE";
   return `${location} [${code}] ${diagnostic.message}`;
+}
+
+function isVirtualCollieId(id: string): boolean {
+  return (
+    id === VIRTUAL_REGISTRY_ID ||
+    id === VIRTUAL_REGISTRY_RESOLVED ||
+    id === VIRTUAL_IDS_ID ||
+    id === VIRTUAL_IDS_RESOLVED ||
+    id.startsWith(VIRTUAL_TEMPLATE_PREFIX) ||
+    id.startsWith(VIRTUAL_TEMPLATE_RESOLVED_PREFIX)
+  );
+}
+
+function buildDirectImportError(importedId: string, importer?: string, root?: string): Error {
+  const importLine = stripQuery(importedId);
+  const importerLabel = importer ? toDisplayPath(importer, root) : "<unknown>";
+  const lines = [
+    "Direct .collie imports are not supported.",
+    `Importer: ${importerLabel}`,
+    `Import: ${importLine}`,
+    "Use the registry runtime instead:",
+    "import { Collie } from '@collie-lang/react'",
+    '<Collie id="Your.TemplateId" />',
+    "Templates are discovered automatically by @collie-lang/vite."
+  ];
+  return new Error(lines.join("\n"));
 }
 
 function encodeTemplateId(id: string): string {
@@ -224,7 +245,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       resetTemplates();
     },
 
-    resolveId(id) {
+    resolveId(id, importer) {
       const cleanId = stripQuery(id);
       if (cleanId === VIRTUAL_REGISTRY_ID) {
         return VIRTUAL_REGISTRY_RESOLVED;
@@ -243,6 +264,9 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       }
       if (cleanId.startsWith(VIRTUAL_TEMPLATE_RESOLVED_PREFIX)) {
         return cleanId;
+      }
+      if (!isVirtualCollieId(cleanId) && cleanId.endsWith(".collie")) {
+        this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
       }
       return null;
     },
@@ -338,37 +362,13 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
           map: transformed.map ?? null
         };
       }
-
-      if (!isCollieFile(id)) return null;
-
-      const filePath = stripQuery(id);
-      const source = await fs.readFile(filePath, "utf-8");
-
-      const result = compileToTsx(source, {
-        filename: filePath,
-        componentNameHint: toComponentNameHint(filePath),
-        jsxRuntime: resolvedRuntime
-      });
-
-      const errors = result.diagnostics.filter((d) => d.severity === "error");
-      if (errors.length) {
-        const formatted = errors
-          .map((diag) => formatDiagnostic(filePath, diag, resolvedConfig?.root))
-          .join("\n");
-        this.error(new Error(`[collie]\n${formatted}`));
+      if (isCollieFile(cleanId)) {
+        const info = this.getModuleInfo(cleanId);
+        const importer = info?.importers?.[0];
+        this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
       }
 
-      // Compiler output contains JSX. Transform it to plain JS so Rollup can parse.
-      const transformed = await transformWithEsbuild(result.code, filePath, {
-        loader: "tsx",
-        jsx: resolvedRuntime === "classic" ? "transform" : "automatic",
-        jsxImportSource: "react"
-      });
-
-      return {
-        code: transformed.code,
-        map: transformed.map ?? null
-      };
+      return null;
     },
 
     handleHotUpdate(ctx: HmrContext) {
