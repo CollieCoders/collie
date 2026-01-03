@@ -451,7 +451,7 @@ function emitPropsDestructure(props?: PropsDecl): string | null {
     return null;
   }
   const names = props.fields.map((field) => field.name);
-  return `const { ${names.join(", ")} } = props;`;
+  return `const { ${names.join(", ")} } = props ?? {};`;
 }
 
 function escapeText(value: string): string {

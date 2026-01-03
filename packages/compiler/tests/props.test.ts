@@ -26,7 +26,7 @@ assert.ok(
   "Typed props result should emit the Props typedef"
 );
 assert.ok(
-  typedResult.code.includes("const { name } = props;"),
+  typedResult.code.includes("const { name } = props ?? {};"),
   "Typed props result should destructure props for bare identifiers"
 );
 
