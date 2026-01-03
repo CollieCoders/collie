@@ -875,8 +875,8 @@ function parseTemplateBlock(
       i = multilineEnd;
     }
 
-    const element = parseElement(fullLine, lineNumber, indent + 1, lineOffset, diagnostics);
-    if (!element) {
+    const elementResult = parseElementWithInfo(fullLine, lineNumber, indent + 1, lineOffset, diagnostics);
+    if (!elementResult) {
       // Try parsing as text if element parsing failed
       const textNode = parseTextPayload(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
       if (textNode && textNode.parts.length > 0) {
@@ -886,6 +886,26 @@ function parseTemplateBlock(
         }
       }
       continue;
+    }
+
+    const element = elementResult.node;
+    if (
+      element.type === "Element" &&
+      !elementResult.hasAttributeGroup &&
+      element.children.length === 0
+    ) {
+      const indentedAttributes = collectIndentedAttributeLines(
+        lines,
+        lineOffsets,
+        i,
+        endIndex,
+        level,
+        diagnostics
+      );
+      if (indentedAttributes.attributes.length > 0) {
+        element.attributes.push(...indentedAttributes.attributes);
+      }
+      i = indentedAttributes.nextIndex;
     }
 
     addChildToParent(parent, element);
@@ -1690,15 +1710,91 @@ function validateNodeClassAliases(
   }
 }
 
-function parseElement(
+interface ParsedElementResult {
+  node: ElementNode | ComponentNode;
+  hasAttributeGroup: boolean;
+}
+
+interface AttributeTokenParseResult {
+  attributes: Attribute[];
+  rest: string;
+  restColumn: number;
+}
+
+function parseAttributeTokensFromStart(
+  source: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): AttributeTokenParseResult | null {
+  let remaining = source;
+  let consumed = 0;
+  let parsedAny = false;
+  const attributes: Attribute[] = [];
+
+  while (remaining.length > 0) {
+    if (!/^([A-Za-z][A-Za-z0-9_-]*)\s*=/.test(remaining)) {
+      break;
+    }
+    parsedAny = true;
+    const before = remaining;
+    const next = parseAndAddAttribute(
+      remaining,
+      attributes,
+      diagnostics,
+      lineNumber,
+      column + consumed,
+      lineOffset
+    );
+    if (next.length === before.length) {
+      break;
+    }
+    consumed += before.length - next.length;
+    remaining = next;
+  }
+
+  if (!parsedAny) {
+    return null;
+  }
+
+  return {
+    attributes,
+    rest: remaining,
+    restColumn: column + consumed
+  };
+}
+
+function parseAttributeLine(
+  source: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): Attribute[] | null {
+  const result = parseAttributeTokensFromStart(
+    source,
+    lineNumber,
+    column,
+    lineOffset,
+    diagnostics
+  );
+  if (!result || result.rest.length > 0) {
+    return null;
+  }
+  return result.attributes;
+}
+
+function parseElementWithInfo(
   line: string,
   lineNumber: number,
   column: number,
   lineOffset: number,
   diagnostics: Diagnostic[]
-): ElementNode | ComponentNode | null {
+): ParsedElementResult | null {
   let name: string;
   let cursor = 0;
+  let hasAttributeGroup = false;
 
   if (line[cursor] === ".") {
     // Implicit div shorthand (e.g. `.foo` -> `div.foo`)
@@ -1769,6 +1865,7 @@ function parseElement(
       return null;
     }
     attributes.push(...attrResult.attributes);
+    hasAttributeGroup = true;
     cursor = attrResult.endIndex;
   }
 
@@ -1805,14 +1902,54 @@ function parseElement(
   }
 
   // Parse inline text or children
-  let rest = line.slice(cursor).trimStart();
+  const restRaw = line.slice(cursor);
+  let rest = restRaw.trimStart();
+  let restColumn = column + cursor + (restRaw.length - rest.length);
   const children: Node[] = [];
 
   if (rest.length > 0) {
-    // Bare text after the element
-    const textNode = parseTextPayload(rest, lineNumber, column + cursor + (line.slice(cursor).length - rest.length), lineOffset, diagnostics);
-    if (textNode) {
-      children.push(textNode);
+    const inlineAttrs = parseAttributeTokensFromStart(
+      rest,
+      lineNumber,
+      restColumn,
+      lineOffset,
+      diagnostics
+    );
+    if (inlineAttrs) {
+      attributes.push(...inlineAttrs.attributes);
+      rest = inlineAttrs.rest;
+      restColumn = inlineAttrs.restColumn;
+    }
+
+    if (rest.length > 0) {
+      if (!rest.startsWith("|")) {
+        pushDiag(
+          diagnostics,
+          "COLLIE004",
+          "Inline text must start with '|'.",
+          lineNumber,
+          restColumn,
+          lineOffset,
+          Math.max(rest.length, 1)
+        );
+      } else {
+        let payload = rest.slice(1);
+        let payloadColumn = restColumn + 1;
+        if (payload.startsWith(" ")) {
+          payload = payload.slice(1);
+          payloadColumn += 1;
+        }
+        const textNode = parseTextPayload(
+          payload,
+          lineNumber,
+          payloadColumn,
+          lineOffset,
+          diagnostics
+        );
+        if (textNode) {
+          children.push(textNode);
+        }
+      }
     }
   }
 
@@ -1827,7 +1964,7 @@ function parseElement(
       component.guard = guard;
       component.guardSpan = guardSpan;
     }
-    return component;
+    return { node: component, hasAttributeGroup };
   } else {
     const element: ElementNode = {
       type: "Element",
@@ -1843,8 +1980,77 @@ function parseElement(
       element.guard = guard;
       element.guardSpan = guardSpan;
     }
-    return element;
+    return { node: element, hasAttributeGroup };
   }
+}
+
+function parseElement(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): ElementNode | ComponentNode | null {
+  const result = parseElementWithInfo(line, lineNumber, column, lineOffset, diagnostics);
+  return result ? result.node : null;
+}
+
+function collectIndentedAttributeLines(
+  lines: string[],
+  lineOffsets: number[],
+  startIndex: number,
+  endIndex: number,
+  parentLevel: number,
+  diagnostics: Diagnostic[]
+): { attributes: Attribute[]; nextIndex: number } {
+  const attributes: Attribute[] = [];
+  let index = startIndex;
+
+  while (index < endIndex) {
+    const rawLine = lines[index];
+    if (/^\s*$/.test(rawLine)) {
+      break;
+    }
+    if (rawLine.includes("\t")) {
+      break;
+    }
+    const indentMatch = rawLine.match(/^\s*/) ?? [""];
+    const indent = indentMatch[0].length;
+    if (indent % 2 !== 0) {
+      break;
+    }
+    const level = indent / 2;
+    if (level !== parentLevel + 1) {
+      break;
+    }
+
+    const lineContent = rawLine.slice(indent);
+    const trimmed = lineContent.trimEnd();
+    const leadingWhitespace = trimmed.length - trimmed.trimStart().length;
+    const attrLine = trimmed.trimStart();
+    if (!attrLine) {
+      break;
+    }
+
+    const lineNumber = index + 1;
+    const lineOffset = lineOffsets[index];
+    const attrColumn = indent + 1 + leadingWhitespace;
+    const lineAttributes = parseAttributeLine(
+      attrLine,
+      lineNumber,
+      attrColumn,
+      lineOffset,
+      diagnostics
+    );
+    if (!lineAttributes) {
+      break;
+    }
+
+    attributes.push(...lineAttributes);
+    index++;
+  }
+
+  return { attributes, nextIndex: index };
 }
 
 interface ParseAttributesResult {
@@ -1950,6 +2156,90 @@ function parseAttributes(
   return { attributes, endIndex: cursor };
 }
 
+// Scan brace-wrapped attribute values as a single unit, balancing nested delimiters and quoted strings.
+function scanBraceAttributeValue(
+  source: string,
+  diagnostics: Diagnostic[],
+  lineNumber: number,
+  column: number,
+  lineOffset: number
+): { value: string; rest: string } | null {
+  if (!source.startsWith("{")) {
+    return null;
+  }
+
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "{") {
+      braceDepth++;
+      continue;
+    }
+    if (char === "}") {
+      braceDepth--;
+      if (braceDepth === 0 && parenDepth === 0 && bracketDepth === 0) {
+        return { value: source.slice(0, i + 1), rest: source.slice(i + 1).trim() };
+      }
+      continue;
+    }
+    if (char === "(") {
+      parenDepth++;
+      continue;
+    }
+    if (char === ")") {
+      if (parenDepth > 0) {
+        parenDepth--;
+      }
+      continue;
+    }
+    if (char === "[") {
+      bracketDepth++;
+      continue;
+    }
+    if (char === "]") {
+      if (bracketDepth > 0) {
+        bracketDepth--;
+      }
+    }
+  }
+
+  pushDiag(
+    diagnostics,
+    "COLLIE004",
+    "Unclosed brace in attribute value.",
+    lineNumber,
+    column,
+    lineOffset
+  );
+  return null;
+}
+
 function parseAndAddAttribute(
   attrStr: string,
   attributes: Attribute[],
@@ -1977,7 +2267,13 @@ function parseAndAddAttribute(
       );
       return "";
     }
-    
+
+    const braceValue = scanBraceAttributeValue(afterEquals, diagnostics, lineNumber, column, lineOffset);
+    if (braceValue) {
+      attributes.push({ name: attrName, value: braceValue.value });
+      return braceValue.rest;
+    }
+
     // Extract the quoted value
     const quoteChar = afterEquals[0];
     if (quoteChar === '"' || quoteChar === "'") {
