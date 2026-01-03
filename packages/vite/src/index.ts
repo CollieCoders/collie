@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import fg from "fast-glob";
-import type { HmrContext, Plugin, ResolvedConfig } from "vite";
+import type { HmrContext, ModuleNode, Plugin, ResolvedConfig } from "vite";
 import { normalizePath, transformWithEsbuild } from "vite";
 import type { Diagnostic, TemplateUnit } from "@collie-lang/compiler";
 import { compileTemplate, parseCollie } from "@collie-lang/compiler";
@@ -156,11 +156,61 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
   let needsScan = true;
   const templatesById = new Map<string, TemplateRecord>();
   const templatesByEncodedId = new Map<string, TemplateRecord>();
+  const fileToTemplateIds = new Map<string, Set<string>>();
+  const templateIdToVirtualId = new Map<string, string>();
 
   const resetTemplates = (): void => {
     needsScan = true;
     templatesById.clear();
     templatesByEncodedId.clear();
+    fileToTemplateIds.clear();
+    templateIdToVirtualId.clear();
+  };
+
+  const trackTemplateRecord = (record: TemplateRecord): void => {
+    templatesById.set(record.id, record);
+    templatesByEncodedId.set(record.encodedId, record);
+    templateIdToVirtualId.set(record.id, `${VIRTUAL_TEMPLATE_RESOLVED_PREFIX}${record.encodedId}`);
+    const ids = fileToTemplateIds.get(record.filePath) ?? new Set<string>();
+    ids.add(record.id);
+    fileToTemplateIds.set(record.filePath, ids);
+  };
+
+  const removeFileTemplates = (filePath: string): Set<string> => {
+    const ids = fileToTemplateIds.get(filePath) ?? new Set<string>();
+    for (const id of ids) {
+      const record = templatesById.get(id);
+      if (record && record.filePath === filePath) {
+        templatesById.delete(id);
+        templatesByEncodedId.delete(record.encodedId);
+        templateIdToVirtualId.delete(id);
+      }
+    }
+    fileToTemplateIds.delete(filePath);
+    return ids;
+  };
+
+  const collectModuleIds = (ids: Iterable<string>): Set<string> => {
+    const moduleIds = new Set<string>();
+    for (const id of ids) {
+      const moduleId = templateIdToVirtualId.get(id);
+      if (moduleId) {
+        moduleIds.add(moduleId);
+      }
+    }
+    return moduleIds;
+  };
+
+  const reportHmrError = (ctx: HmrContext, error: unknown): void => {
+    const err = error instanceof Error ? error : new Error(String(error));
+    ctx.server.config.logger.error(err.message);
+    ctx.server.ws.send({
+      type: "error",
+      err: {
+        message: err.message,
+        stack: err.stack ?? ""
+      }
+    });
   };
 
   const ensureTemplates = async (watcher?: { addWatchFile: (id: string) => void }): Promise<void> => {
@@ -174,6 +224,8 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
     templatesById.clear();
     templatesByEncodedId.clear();
+    fileToTemplateIds.clear();
+    templateIdToVirtualId.clear();
 
     const root = resolvedConfig.root ?? process.cwd();
     const ignore = buildIgnoreGlobs(resolvedConfig);
@@ -209,8 +261,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
           template,
           location
         };
-        templatesById.set(template.id, record);
-        templatesByEncodedId.set(encodedId, record);
+        trackTemplateRecord(record);
         const locations = locationsById.get(template.id) ?? [];
         locations.push(location);
         locationsById.set(template.id, locations);
@@ -233,6 +284,98 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     }
 
     needsScan = false;
+  };
+
+  const updateFileTemplates = async (ctx: HmrContext): Promise<ModuleNode[]> => {
+    if (needsScan) {
+      try {
+        await ensureTemplates();
+      } catch (error) {
+        reportHmrError(ctx, error);
+        return [];
+      }
+    }
+
+    const filePath = ctx.file;
+    const root = resolvedConfig?.root ?? process.cwd();
+    const previousIds = fileToTemplateIds.get(filePath) ?? new Set<string>();
+    const previousModuleIds = collectModuleIds(previousIds);
+
+    let source: string | null = null;
+    try {
+      source = await fs.readFile(filePath, "utf-8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+        removeFileTemplates(filePath);
+        return invalidateModules(ctx, previousModuleIds);
+      }
+      reportHmrError(ctx, error);
+      return [];
+    }
+
+    const document = parseCollie(source, { filename: filePath });
+    const errors = document.diagnostics.filter((diag) => diag.severity === "error");
+    if (errors.length) {
+      const formatted = errors.map((diag) => formatDiagnostic(filePath, diag, root)).join("\n");
+      reportHmrError(ctx, new Error(`[collie]\n${formatted}`));
+      return [];
+    }
+
+    const duplicates = new Map<string, TemplateLocation[]>();
+    for (const template of document.templates) {
+      const existing = templatesById.get(template.id);
+      if (existing && existing.filePath !== filePath) {
+        const locations = duplicates.get(template.id) ?? [existing.location];
+        locations.push({
+          file: filePath,
+          line: template.span?.start.line,
+          col: template.span?.start.col
+        });
+        duplicates.set(template.id, locations);
+      }
+    }
+    if (duplicates.size) {
+      reportHmrError(ctx, new Error(formatDuplicateIdError(duplicates, root)));
+      return [];
+    }
+
+    removeFileTemplates(filePath);
+    for (const template of document.templates) {
+      const record: TemplateRecord = {
+        id: template.id,
+        encodedId: encodeTemplateId(template.id),
+        filePath,
+        template,
+        location: {
+          file: filePath,
+          line: template.span?.start.line,
+          col: template.span?.start.col
+        }
+      };
+      trackTemplateRecord(record);
+    }
+
+    const nextIds = fileToTemplateIds.get(filePath) ?? new Set<string>();
+    const nextModuleIds = collectModuleIds(nextIds);
+    const moduleIds = new Set<string>([...previousModuleIds, ...nextModuleIds]);
+    return invalidateModules(ctx, moduleIds);
+  };
+
+  const invalidateModules = (ctx: HmrContext, moduleIds: Iterable<string>): ModuleNode[] => {
+    const modules: ModuleNode[] = [];
+    const registryModule = ctx.server.moduleGraph.getModuleById(VIRTUAL_REGISTRY_RESOLVED);
+    if (registryModule) {
+      ctx.server.moduleGraph.invalidateModule(registryModule);
+      modules.push(registryModule);
+    }
+    for (const moduleId of moduleIds) {
+      const mod = ctx.server.moduleGraph.getModuleById(moduleId);
+      if (mod) {
+        ctx.server.moduleGraph.invalidateModule(mod);
+        modules.push(mod);
+      }
+    }
+    return modules;
   };
 
   return {
@@ -376,13 +519,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         return;
       }
 
-      resetTemplates();
-      for (const mod of ctx.modules) {
-        ctx.server.moduleGraph.invalidateModule(mod);
-      }
-
-      ctx.server.ws.send({ type: "full-reload", path: ctx.file });
-      return [];
+      return updateFileTemplates(ctx);
     }
   };
 }
