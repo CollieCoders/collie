@@ -81,6 +81,7 @@ This repo uses **pnpm workspaces** and contains all official Collie tooling:
 
 ```
 packages/
+  collie-react – React runtime `<Collie id>` component backed by the build-time registry
   compiler   – Collie parser, AST, printer, and JSX generator
   vite       – Vite plugin for `.collie` → JSX transforms
   webpack    – Webpack loader used by other tooling (e.g. Next.js)
