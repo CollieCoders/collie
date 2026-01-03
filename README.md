@@ -211,6 +211,8 @@ Commands include:
 ```
 collie build        Compile an entire template directory
 collie check        Validate Collie files without generating output
+collie ids          List template ids and their locations
+collie explain      Show the file + location for a template id
 collie format       Format .collie files using the printer
 collie watch        Recompile on file changes
 ```

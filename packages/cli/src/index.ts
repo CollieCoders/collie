@@ -11,7 +11,12 @@ import { formatSource } from "./formatter";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
-import { check as runCheck } from "./checker";
+import {
+  buildDuplicateDiagnostics,
+  check as runCheck,
+  scanTemplates,
+  type TemplateInfo
+} from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import type { NextDirectoryInfo } from "./nextjs-setup";
@@ -153,6 +158,37 @@ async function main() {
       );
       console.error(pc.dim("Next: fix warnings or raise --max-warnings."));
       process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (cmd === "ids") {
+    const rest = args.slice(1);
+    const patterns = rest.filter((arg) => !arg.startsWith("-"));
+    const resolvedPatterns = patterns.length ? patterns : ["**/*.collie"];
+    try {
+      await runIds(resolvedPatterns);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      printCliError(message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (cmd === "explain") {
+    const rest = args.slice(1);
+    const { id, patterns } = parseExplainArgs(rest);
+    if (!id) {
+      throw new Error("No template id provided. Usage: collie explain <id> [files...]");
+    }
+    const resolvedPatterns = patterns.length ? patterns : ["**/*.collie"];
+    try {
+      await runExplain(id, resolvedPatterns);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      printCliError(message);
+      process.exit(1);
     }
     return;
   }
@@ -465,9 +501,11 @@ Usage:
   collie <command> [options]
 
 Commands:
-  collie build    Compile .collie templates to .tsx
+  collie build    Compile .collie templates to output files
   collie check    Validate .collie templates
   collie config   Print resolved Collie config (json)
+  collie ids      List template ids and their locations
+  collie explain  Find the file + location for a template id
   collie format   Format .collie templates
   collie convert  Convert JSX/TSX to .collie templates
   collie doctor   Diagnose setup issues
@@ -475,6 +513,107 @@ Commands:
   collie watch    Watch and compile templates
   collie create   Scaffold a new Collie project
 `);
+}
+
+async function runIds(patterns: string[]): Promise<void> {
+  const scan = await scanTemplates(patterns);
+  const diagnostics = [...scan.diagnostics, ...buildDuplicateDiagnostics(scan.templates)];
+  const errors = diagnostics.filter((diag) => diag.severity === "error");
+
+  if (diagnostics.length) {
+    printDiagnostics(diagnostics);
+  }
+
+  if (errors.length) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const templates = [...scan.templates].sort((a, b) => {
+    const byId = a.id.localeCompare(b.id);
+    if (byId !== 0) return byId;
+    return a.displayPath.localeCompare(b.displayPath);
+  });
+
+  if (!templates.length) {
+    printSummary(
+      "warning",
+      "No template ids found",
+      `checked ${scan.files.length} file${scan.files.length === 1 ? "" : "s"}`,
+      "add #id blocks then rerun collie ids"
+    );
+    return;
+  }
+
+  for (const template of templates) {
+    console.log(`${template.id}  ${formatTemplateLocation(template)}`);
+  }
+}
+
+async function runExplain(id: string, patterns: string[]): Promise<void> {
+  const scan = await scanTemplates(patterns);
+  const diagnostics = [...scan.diagnostics, ...buildDuplicateDiagnostics(scan.templates)];
+  const errors = diagnostics.filter((diag) => diag.severity === "error");
+
+  if (diagnostics.length) {
+    printDiagnostics(diagnostics);
+  }
+
+  if (errors.length) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const matches = scan.templates.filter((template) => template.id === id);
+  if (!matches.length) {
+    const knownIds = Array.from(new Set(scan.templates.map((template) => template.id))).sort();
+    const preview = knownIds.slice(0, 5);
+    const suffix = knownIds.length > preview.length ? "..." : "";
+    const details = preview.length ? `Known ids: ${preview.join(", ")}${suffix}` : "No template ids found.";
+    printCliError(`Unknown template id "${id}". ${details}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const sorted = matches.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
+  for (const template of sorted) {
+    console.log(`${template.id}  ${formatTemplateLocation(template)}`);
+  }
+}
+
+function parseExplainArgs(args: string[]): { id?: string; patterns: string[] } {
+  let id: string | undefined;
+  const patterns: string[] = [];
+  for (const arg of args) {
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    if (!id) {
+      id = arg;
+      continue;
+    }
+    patterns.push(arg);
+  }
+  return { id, patterns };
+}
+
+function formatTemplateLocation(template: TemplateInfo): string {
+  const span = template.span;
+  if (span) {
+    return `${template.displayPath}:${span.start.line}:${span.start.col}`;
+  }
+  return template.displayPath;
+}
+
+function printDiagnostics(diagnostics: Diagnostic[]): void {
+  for (const diag of diagnostics) {
+    const message = formatDiagnosticLine(diag);
+    const writer = diag.severity === "warning" ? pc.yellow : pc.red;
+    console.log(writer(message));
+  }
+  if (diagnostics.length) {
+    console.log("");
+  }
 }
 
 async function runInit(options: InitOptions = {}): Promise<void> {
