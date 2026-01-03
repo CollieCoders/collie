@@ -521,7 +521,7 @@ async function runIds(patterns: string[]): Promise<void> {
   const errors = diagnostics.filter((diag) => diag.severity === "error");
 
   if (diagnostics.length) {
-    printDiagnostics(diagnostics);
+    printTemplateDiagnostics(diagnostics);
   }
 
   if (errors.length) {
@@ -556,7 +556,7 @@ async function runExplain(id: string, patterns: string[]): Promise<void> {
   const errors = diagnostics.filter((diag) => diag.severity === "error");
 
   if (diagnostics.length) {
-    printDiagnostics(diagnostics);
+    printTemplateDiagnostics(diagnostics);
   }
 
   if (errors.length) {
@@ -605,7 +605,7 @@ function formatTemplateLocation(template: TemplateInfo): string {
   return template.displayPath;
 }
 
-function printDiagnostics(diagnostics: Diagnostic[]): void {
+function printTemplateDiagnostics(diagnostics: Diagnostic[]): void {
   for (const diag of diagnostics) {
     const message = formatDiagnosticLine(diag);
     const writer = diag.severity === "warning" ? pc.yellow : pc.red;

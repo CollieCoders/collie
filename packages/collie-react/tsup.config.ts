@@ -8,5 +8,5 @@ export default defineConfig({
   clean: true,
   target: "es2022",
   splitting: false,
-  external: ["react"]
+  external: ["react", "react/jsx-runtime", "virtual:collie/registry", "virtual:collie/ids"]
 });

@@ -1,3 +1,4 @@
+/// <reference path="./virtual.d.ts" />
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { CollieRegistry, CollieTemplateModule } from "./registry";

@@ -39,9 +39,18 @@ importers:
       '@collie-lang/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@collie-lang/config':
+        specifier: workspace:*
+        version: link:../config
       '@collie-lang/next':
         specifier: workspace:*
         version: link:../next
+      '@collie-lang/vite':
+        specifier: workspace:*
+        version: link:../vite
+      '@collie-lang/webpack':
+        specifier: workspace:*
+        version: link:../webpack
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
@@ -64,6 +73,15 @@ importers:
       '@types/prompts':
         specifier: ^2.4.9
         version: 2.4.9
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/collie-react:
+    devDependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.3
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -109,13 +127,13 @@ importers:
       '@collie-lang/config':
         specifier: workspace:*
         version: link:../config
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
     devDependencies:
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
 
   packages/config:
     dependencies:
@@ -213,6 +231,9 @@ importers:
       '@collie-lang/compiler':
         specifier: workspace:*
         version: link:../compiler
+      fast-glob:
+        specifier: ^3.3.3
+        version: 3.3.3
     devDependencies:
       typescript:
         specifier: ^5.7.2
