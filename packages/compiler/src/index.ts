@@ -1,10 +1,11 @@
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
-import { generateModule } from "./codegen";
+import { generateRenderModule } from "./codegen";
 import { generateHtml } from "./html-codegen";
 import { parse } from "./parser";
 import type { ParseResult, TemplateUnit } from "./parser";
 import type { Diagnostic } from "./diagnostics";
 import type { RootNode } from "./ast";
+import type { SourceSpan } from "./diagnostics";
 
 export type {
   CollieConfig,
@@ -99,6 +100,7 @@ export interface CollieCompileMeta {
   id?: string;
   rawId?: string;
   filename?: string;
+  span?: SourceSpan;
 }
 
 export interface CompileResult {
@@ -112,6 +114,12 @@ export interface ConvertCollieResult {
   tsx: string;
   diagnostics: Diagnostic[];
   meta?: CollieCompileMeta;
+}
+
+export interface CompileTemplateOptions {
+  filename?: string;
+  jsxRuntime?: "classic" | "automatic";
+  flavor?: "jsx" | "tsx";
 }
 
 export type CollieDocument = ParseResult;
@@ -137,6 +145,24 @@ export function parseCollie(source: string, options: ParseCollieOptions = {}): C
   };
 }
 
+export function compileTemplate(
+  template: TemplateUnit,
+  options: CompileTemplateOptions = {}
+): CompileResult {
+  const diagnostics = normalizeDiagnostics(template.diagnostics, options.filename);
+  const jsxRuntime = options.jsxRuntime ?? "automatic";
+  const flavor = options.flavor ?? "tsx";
+
+  let code = createStubRender(flavor);
+  if (!hasErrors(diagnostics)) {
+    code = generateRenderModule(template.ast, { jsxRuntime, flavor });
+  }
+
+  const meta = buildCompileMeta(template, options.filename);
+  return { code, diagnostics, map: undefined, meta };
+}
+
+/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
 export function compileToJsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: JsxCompileOptions = {}
@@ -149,13 +175,19 @@ export function compileToJsx(
 
   let code = createStubComponent(componentName, "jsx");
   if (!hasErrors(diagnostics) && template) {
-    code = generateModule(template.ast, { componentName, jsxRuntime, flavor: "jsx" });
+    const renderResult = compileTemplate(template, {
+      filename: options.filename,
+      jsxRuntime,
+      flavor: "jsx"
+    });
+    code = wrapRenderModuleAsComponent(renderResult.code, componentName, "jsx");
   }
 
-  const meta = buildCompileMeta(document, template, options.filename);
+  const meta = buildCompileMeta(template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
+/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
 export function compileToTsx(
   sourceOrAst: string | RootNode | CollieDocument,
   options: TsxCompileOptions = {}
@@ -168,13 +200,19 @@ export function compileToTsx(
 
   let code = createStubComponent(componentName, "tsx");
   if (!hasErrors(diagnostics) && template) {
-    code = generateModule(template.ast, { componentName, jsxRuntime, flavor: "tsx" });
+    const renderResult = compileTemplate(template, {
+      filename: options.filename,
+      jsxRuntime,
+      flavor: "tsx"
+    });
+    code = wrapRenderModuleAsComponent(renderResult.code, componentName, "tsx");
   }
 
-  const meta = buildCompileMeta(document, template, options.filename);
+  const meta = buildCompileMeta(template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
+/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
 export function convertCollieToTsx(source: string, options: TsxCompileOptions = {}): ConvertCollieResult {
   const result = compileToTsx(source, options);
   return {
@@ -197,10 +235,11 @@ export function compileToHtml(
     code = generateHtml(template.ast);
   }
 
-  const meta = buildCompileMeta(document, template, options.filename);
+  const meta = buildCompileMeta(template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
+/** @deprecated Legacy component import flow is not supported. Use compileTemplate instead. */
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
   return compileToJsx(source, options);
 }
@@ -268,12 +307,33 @@ function createStubComponent(name: string, flavor: "jsx" | "tsx"): string {
   return [`export default function ${name}(props) {`, "  return null;", "}"].join("\n");
 }
 
+function createStubRender(flavor: "jsx" | "tsx"): string {
+  if (flavor === "tsx") {
+    return [
+      "export type Props = Record<string, never>;",
+      "export function render(props: any) {",
+      "  return null;",
+      "}"
+    ].join("\n");
+  }
+  return ["export function render(props) {", "  return null;", "}"].join("\n");
+}
+
+function wrapRenderModuleAsComponent(
+  renderModule: string,
+  name: string,
+  flavor: "jsx" | "tsx"
+): string {
+  const signature = flavor === "tsx" ? `export default function ${name}(props: Props) {` : `export default function ${name}(props) {`;
+  const wrapper = [signature, "  return render(props);", "}"].join("\n");
+  return `${renderModule}\n\n${wrapper}`;
+}
+
 function createStubHtml(): string {
   return "";
 }
 
 function buildCompileMeta(
-  document: CollieDocument,
   template: TemplateUnit | undefined,
   filename?: string
 ): CollieCompileMeta | undefined {
@@ -286,6 +346,9 @@ function buildCompileMeta(
   }
   if (template?.id) {
     meta.id = template.id;
+  }
+  if (template?.span) {
+    meta.span = template.span;
   }
 
   return meta.id || meta.rawId || meta.filename ? meta : undefined;

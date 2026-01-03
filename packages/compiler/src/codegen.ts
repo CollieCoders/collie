@@ -20,27 +20,16 @@ export interface CodegenOptions {
   flavor: "jsx" | "tsx";
 }
 
+export interface RenderCodegenOptions {
+  jsxRuntime: "automatic" | "classic";
+  flavor: "jsx" | "tsx";
+}
+
 export function generateModule(root: RootNode, options: CodegenOptions): string {
-  const { componentName, jsxRuntime, flavor } = options;
-  const isTsx = flavor === "tsx";
+  const { componentName } = options;
+  const { prelude, propsType, propsDestructure, jsx, isTsx } = buildModuleParts(root, options);
 
-  const aliasEnv = buildClassAliasEnvironment(root.classAliases);
-  const jsx = renderRootChildren(root.children, aliasEnv);
-  const propsDestructure = emitPropsDestructure(root.props);
-
-  const parts: string[] = [];
-
-  if (root.clientComponent) {
-    parts.push(`"use client";`);
-  }
-
-  // Classic runtime needs React in scope for JSX transforms.
-  if (jsxRuntime === "classic" && templateUsesJsx(root)) {
-    parts.push(`import React from "react";`);
-  }
-
-  // JS-safe typedef for Props (JSDoc)
-  parts.push(emitPropsType(root.props, flavor));
+  const parts: string[] = [...prelude, propsType];
 
   if (!isTsx) {
     // JS-safe param typing (JSDoc), so tooling can still understand Props.
@@ -60,6 +49,62 @@ export function generateModule(root: RootNode, options: CodegenOptions): string 
   parts.push(functionLines.join("\n"));
 
   return parts.join("\n\n");
+}
+
+export function generateRenderModule(root: RootNode, options: RenderCodegenOptions): string {
+  const { prelude, propsType, propsDestructure, jsx, isTsx } = buildModuleParts(root, options);
+  const parts: string[] = [...prelude, propsType];
+
+  if (!isTsx) {
+    parts.push(`/** @param {any} props */`);
+  }
+
+  const functionLines = [
+    isTsx ? "export function render(props: any) {" : "export function render(props) {"
+  ];
+  if (propsDestructure) {
+    functionLines.push(`  ${propsDestructure}`);
+  }
+  functionLines.push(`  return ${jsx};`, `}`);
+  parts.push(functionLines.join("\n"));
+
+  return parts.join("\n\n");
+}
+
+interface ModuleParts {
+  prelude: string[];
+  propsType: string;
+  propsDestructure: string | null;
+  jsx: string;
+  isTsx: boolean;
+}
+
+function buildModuleParts(
+  root: RootNode,
+  options: { jsxRuntime: "automatic" | "classic"; flavor: "jsx" | "tsx" }
+): ModuleParts {
+  const { jsxRuntime, flavor } = options;
+  const isTsx = flavor === "tsx";
+
+  const aliasEnv = buildClassAliasEnvironment(root.classAliases);
+  const jsx = renderRootChildren(root.children, aliasEnv);
+  const propsDestructure = emitPropsDestructure(root.props);
+
+  const prelude: string[] = [];
+
+  if (root.clientComponent) {
+    prelude.push(`"use client";`);
+  }
+
+  // Classic runtime needs React in scope for JSX transforms.
+  if (jsxRuntime === "classic" && templateUsesJsx(root)) {
+    prelude.push(`import React from "react";`);
+  }
+
+  // JS-safe typedef for Props (JSDoc)
+  const propsType = emitPropsType(root.props, flavor);
+
+  return { prelude, propsType, propsDestructure, jsx, isTsx };
 }
 
 function buildClassAliasEnvironment(

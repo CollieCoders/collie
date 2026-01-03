@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { compileToHtml, parseCollie } from "../src/index";
+import { compileTemplate, compileToHtml, parseCollie } from "../src/index";
 
 console.log("▶ id directive :: multi-template ids");
 
@@ -108,5 +108,11 @@ div
 `.trim()
 );
 assert.equal(multiTemplateResult.templates.length, 2, "Should parse multiple #id blocks into templates");
+
+const renderCompile = compileTemplate(multiTemplateResult.templates[0], { flavor: "tsx" });
+assert.ok(
+  renderCompile.code.includes("export function render"),
+  "compileTemplate should emit an exported render function"
+);
 
 console.log("✅ id directive tests passed.");
