@@ -29,6 +29,10 @@ assert.ok(
   typedResult.code.includes("const { name } = props ?? {};"),
   "Typed props result should destructure props for bare identifiers"
 );
+assert.ok(
+  typedResult.code.includes("props?.name"),
+  "Typed props result should reference props-backed identifiers"
+);
 
 const looseResult = compile(
   `
@@ -60,12 +64,12 @@ div
 );
 expectNoDiagnostics(bareIdentifierResult, "bare identifier without props");
 assert.ok(
-  bareIdentifierResult.code.includes("{name}"),
-  "Bare identifier usage without props should not be rewritten to props.name"
+  bareIdentifierResult.code.includes("{props?.name}"),
+  "Bare identifier usage without props should resolve via props"
 );
 assert.ok(
-  !bareIdentifierResult.code.includes("props.name"),
-  "Bare identifier usage without props should remain untouched"
+  bareIdentifierResult.code.includes("props?.name"),
+  "Bare identifier usage without props should use optional chaining"
 );
 
 console.log("✅ props tests passed.");

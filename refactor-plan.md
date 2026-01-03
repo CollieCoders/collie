@@ -229,49 +229,201 @@ Compiler can compile a single template unit into a module that the Vite plugin c
 
 # Stage A3 — Props Plumbing: Ensure Template Expressions Resolve From `props`
 
+# Stage A3a — Props Plumbing Prep: Identify Expression Resolution + Define Prop Binding Contract
+
 **Complete: 0%**
 
 ### Why this stage exists
 
-Props are “day 1 mandatory.” This stage ensures the compiled render function can access `props` for interpolations/expressions.
+Before changing codegen semantics, we need to **pin down exactly how expressions and variables are resolved today** (where “locals” come from, how interpolation nodes are emitted, etc.). This prevents an expensive model from wasting tokens searching or guessing, and it prevents partially correct “props support” that breaks edge cases.
+
+This stage is intentionally **investigative + small-scope**.
 
 ### Scope
 
-Wire variable/expression resolution to `props`. The exact Collie expression syntax already exists in the compiler — update the semantics so it’s props-backed.
+* Read and pinpoint the **single canonical place(s)** in the compiler where:
+
+  * expressions are parsed
+  * interpolation nodes are represented in AST
+  * expression identifiers are resolved to runtime values
+  * template rendering code is emitted
+* Decide the exact **prop binding rule** we will implement (and document it succinctly).
 
 ### Deliverables
 
-1. **Define the prop resolution rule**
+1. **Map the current flow**
 
-   * If Collie expression references `title`, it should resolve from `props.title` (or destructured `{ title } = props`).
-   * Keep it simple and predictable:
+   * Document (briefly, in comments or a short note in `ARCHITECTURE.md`) the key functions/files involved in:
 
-     * I recommend destructuring at top of render:
+     * parsing expressions/interpolations
+     * resolving identifiers
+     * generating code for dynamic values
 
-       ```ts
-       export function render(props: any) {
-         const { title, user } = props ?? {}
-         ...
-       }
-       ```
-     * Or always use `props.title`. Either is fine, but be consistent.
+2. **Define the prop binding contract (MVP)**
+   Choose one contract and commit to it:
 
-2. **Update compiler codegen accordingly**
+   **Contract (recommended):**
 
-   * Any place that previously assumed “locals” or an implicit scope must now source from `props` (or from a `ctx` that includes props).
+   * The compiled template exports `render(props: any)`.
+   * Template expressions resolve identifiers against:
 
-3. **Document it briefly**
+     1. **`props`** (primary)
+     2. optionally a small built-in set (if you already support helpers like `classNames`, etc.)
+   * For MVP, keep it simple:
 
-   * Add a short section in `ARCHITECTURE.md` about props usage.
+     * Identifiers like `title` become `props.title` in generated code.
+     * If you already have destructuring/lambda patterns, you may destructure once at top:
+
+       * `const p = props ?? {};`
+       * or `const { title, user } = props ?? {};`
+     * But do **not** introduce a large scope system.
+
+   **Behavior for missing props:**
+
+   * Access should not throw.
+   * Use `props?.title` / `(props ?? {}).title` or equivalent.
+
+3. **Confirm how props should be surfaced to templates**
+
+   * If Collie supports JS expressions already, confirm whether “bare identifiers” should map to `props.<id>` (recommended).
+   * If Collie supports something like `$props.title` today (or similar), decide whether to keep it. (My recommendation: bare identifiers → props, and no required prefix.)
+
+4. **Add a short “Props in templates” note to `ARCHITECTURE.md`**
+
+   * 5–10 lines max:
+
+     * how to pass props from React
+     * how identifiers resolve
+     * missing prop behavior
 
 ### Expected Outcome
 
-Templates can use dynamic values passed from React without hacks or “gimmick” vibes.
+You have a **clear, written** binding contract and a **known set of code locations** to change in A3b/A3c. No guessing.
 
 ### Acceptance Criteria
 
-* You can author a template that references a value (whatever Collie’s expression mechanism is) and have it reflect runtime-provided props.
-* No runtime errors due to missing/undefined props access; should fail gracefully (undefined renders nothing or results in empty string depending on semantics).
+* You can point to the exact file(s)/function(s) that:
+
+  * generate code for interpolations/expressions
+  * decide how identifiers are emitted
+* `ARCHITECTURE.md` includes the short props binding rule.
+* No behavior changes yet (this stage can be done with minimal or zero code changes besides docs/comments).
+
+---
+
+# Stage A3b — Props Plumbing Core: Implement `props`-backed Identifier Resolution in Codegen
+
+**Complete: 0%**
+
+### Why this stage exists
+
+This is the actual semantic change: templates must use runtime-provided props, reliably, across all expression/interpolation contexts.
+
+### Scope
+
+* Implement the contract defined in A3a by updating compiler codegen so that:
+
+  * the compiled template’s `render(props)` uses `props` as the source of identifiers
+  * every interpolation/expression path that emits identifiers follows the same rule
+* Keep the implementation **minimal and consistent**.
+
+### Deliverables
+
+1. **Single source of truth for identifier emission**
+
+   * Introduce or update a helper that emits identifier references, so you don’t have five slightly different implementations.
+   * Example concept (names don’t matter):
+
+     * `emitIdentifier(name) -> "props?.<name>"` (or equivalent)
+   * Ensure it is used everywhere identifiers are emitted in expression contexts.
+
+2. **Update expression/interpolation emission**
+
+   * For any AST node representing:
+
+     * interpolation (`{ expr }` style)
+     * attribute bindings
+     * conditional expressions
+     * loops / iterators (if present)
+   * Ensure identifiers in those expressions resolve to `props` per the contract.
+
+3. **Non-throwing access**
+
+   * Ensure missing props don’t throw:
+
+     * use `props && props.x` or optional-chaining where you can.
+   * Don’t overcomplicate; the goal is not perfect type safety yet, just correct runtime behavior.
+
+4. **Preserve existing semantics where props aren’t relevant**
+
+   * Static text remains static
+   * Existing built-in directives/helpers remain unchanged unless they conflict with identifier resolution.
+   * Don’t accidentally rename/repurpose existing runtime variables without intent.
+
+### Expected Outcome
+
+Templates can access runtime-provided values naturally and consistently via bare identifiers (or whatever contract you set), and generated code is consistent across contexts.
+
+### Acceptance Criteria
+
+* A template referencing `title` (in the Collie expression syntax you support) results in generated code that reads from `props.title` (or your chosen equivalent).
+* No runtime exception occurs when `props` is `undefined` or missing the field.
+* The change applies consistently across:
+
+  * interpolation in text content
+  * attribute values
+  * any conditional/loop contexts that support expressions
+* Build succeeds.
+
+---
+
+# Stage A3c — Props Plumbing Hardening: Sweep for Edge Cases + Normalize Output
+
+**Complete: 0%**
+
+### Why this stage exists
+
+After the core change, there will be 1–3 “forgotten” emission paths (attributes, special directives, rare node types). This stage is a mechanical sweep to prevent “props mostly works” vibes.
+
+### Scope
+
+* Repo-wide search for remaining identifier emission / expression handling
+* Normalize to the helper(s) introduced in A3b
+* Add minimal manual verification via fixtures/examples (not tests)
+
+### Deliverables
+
+1. **Sweep and unify**
+
+   * Search for code paths that still emit raw identifiers without props mapping.
+   * Migrate them to the A3b helper.
+   * Ensure there’s exactly one consistent mapping rule.
+
+2. **Update at least one example/fixture**
+
+   * Add or update a small example `.collie` file in an examples folder (or existing fixture) that demonstrates:
+
+     * interpolation from props
+     * attribute binding from props
+     * conditional usage (if supported)
+   * You are **not writing tests**, just ensuring there’s something concrete to run/inspect.
+
+3. **Improve error messages if needed**
+
+   * If expression parsing fails, ensure diagnostics are not misleading (especially if you changed scope rules).
+
+### Expected Outcome
+
+Props support feels “real” rather than fragile, and the compiler has one consistent strategy for emitting identifiers.
+
+### Acceptance Criteria
+
+* Grep/search shows no obvious remaining “raw identifier” emission paths that bypass props.
+* Example/fixture demonstrates props working in at least:
+
+  * text interpolation
+  * attribute binding
+* Build succeeds and output is stable.
 
 ---
 
@@ -338,123 +490,390 @@ React code compiles and runs using `<Collie id="...">` and props.
 
 # Stage A5 — Early Quarantine: Disable Legacy `.collie` Import-as-Component Flows
 
+# Stage A5a — Vite Plugin Core: Build Registry + Enforce Global Unique IDs (No HMR Polish Yet)
+
 **Complete: 0%**
 
 ### Why this stage exists
 
-This refactor’s biggest risk isn’t technical difficulty — it’s **accidental hybrid architecture**.
-
-Once the new registry model is introduced, any remaining “`.collie` imports compile into React components” pathways will mislead Codex (and humans). The result is usually a fragile mashup where:
-
-* some flows resolve templates by **ID**
-* other flows still compile `.collie` into a **named component**
-* docs/examples get inconsistent
-* future changes reintroduce conflicts and confusion
-
-This stage is a **surgical quarantine**: we **disable** legacy integration paths now (so they can’t be accidentally used), but we don’t necessarily delete every last helper yet. Deletion happens later in A8 when everything is proven stable.
+This is the foundational Vite shift. It establishes the build-time registry without getting bogged down in HMR complexities. You want a working registry first, then you tune dev behavior.
 
 ### Scope
 
-* Focus on **integration hot paths** most likely to cause hallucinations/drift:
-
-  * `@collie-lang/vite` plugin’s `.collie` import behavior
-  * any public docs/examples that still demonstrate legacy usage
-  * any “component-name generation” that implies legacy semantics
-* Keep low-level compiler helpers if they’re still useful to reference, but ensure no public or common path uses them.
+* `.collie` discovery (glob)
+* parse templates
+* enforce global uniqueness
+* implement `virtual:collie/registry`
+* implement deterministic internal IDs for template modules
+* minimal viable dev server behavior (no fancy invalidation yet)
 
 ### Deliverables
 
-#### 1) Hard-disable direct `.collie` imports as React components (Vite plugin)
+1. **Discovery + parsing**
 
-If a user tries:
+   * Discover `.collie` files (default `**/*.collie`, exclude node_modules/dist/outDir/etc.)
+   * Parse each file into template units (multi-template) using the new compiler API.
 
-```ts
-import Foo from './Foo.collie'
-```
+2. **Global unique ID enforcement**
 
-or any form of importing `.collie` directly in application code, they should not get a compiled component anymore.
+   * Build `Map<templateId, { file, line, col }>`
+   * On duplicates, throw a single clear error listing:
 
-**Implement one of these approaches (prefer A):**
+     * the duplicated id
+     * both/all file locations
 
-**A) Vite plugin error on `.collie` import requests**
+3. **Virtual module: `virtual:collie/registry`**
 
-* In the plugin hooks handling module resolution/loading:
+   * Implement Vite plugin hooks (`resolveId`/`load`) so that importing `virtual:collie/registry` yields something like:
 
-  * If the requested module is a real `.collie` file path (not one of your virtual template module IDs), throw a clear error.
-* Error message should explicitly instruct:
+     ```ts
+     export const registry = {
+       "Blog.navbar": () => import("virtual:collie/template/Blog.navbar"),
+       ...
+     }
+     ```
 
-  * “Direct importing `.collie` files is not supported. Use `@collie-lang/react` `<Collie id="...">` and ensure `@collie-lang/vite` is installed.”
+   * (You may need to encode IDs for valid module IDs; see below.)
 
-**B) Vite plugin returns a module that throws**
+4. **Virtual template modules**
 
-* If you don’t want to hard-error at compile-time, you can return a JS module that throws at runtime.
-* This is inferior for DX, but still prevents “it compiles, so it must be supported.”
+   * Provide a virtual module per template, e.g.:
 
-**Acceptance preference:** compile-time hard error is best. You want to prevent outdated patterns immediately.
+     * `virtual:collie/template/<encodedId>`
+   * `load()` for that module returns compiled code exporting:
 
-#### 2) Remove “component name derivation” from the active path
+     * `export function render(props) { ... }`
+   * Ensure that compiled template modules are independent (no naming conflict).
 
-Disable/cordon anything in the Vite plugin that:
+5. **Encoding strategy (important)**
 
-* derives a component name from file name / React component name / `#id`
-* exports default React components from `.collie` compilation
-* encourages `.collie` to behave like a JSX component module
+   * IDs like `Blog.navbar` may be used in module IDs; Vite generally tolerates it, but safest is:
 
-This code can:
+     * encode to URL-safe base64 or simple percent encoding.
+   * Provide helper functions:
 
-* be moved into a clearly named file like `legacy/compile-collie-to-component.ts` (not imported anywhere), OR
-* be left in place but unreachable and clearly marked deprecated (less ideal)
-
-The goal is: **Codex can’t accidentally reuse it** during later stages.
-
-#### 3) Quarantine legacy APIs with explicit “do not use” signals
-
-If there are compiler APIs that still scream “legacy usage” (like a `compileFileToComponent` style function), you have two safe options:
-
-* **Option 1 (recommended):** keep the function but make it a thin wrapper over the new multi-template/unit compiler and add loud comments:
-
-  * `/** @deprecated Legacy component import flow is not supported. Do not use for new integrations. */`
-* **Option 2:** move them into a `legacy/` module not referenced by any exports.
-
-Don’t delete them yet unless you’re 100% sure nothing still uses them.
-
-#### 4) Docs/examples guardrail (minimal but critical)
-
-Do a repo-wide search for legacy usage patterns and remove/replace any that are “first-impression” surfaces:
-
-* `import X from './*.collie'`
-* usage like `<X />` where X came from `.collie`
-* any docs describing “Collie compiles to a React component you import”
-
-In this stage, it’s OK to:
-
-* replace with a note: “Docs will be updated fully in later stage”
-  …but do remove the misleading code examples now.
-
-#### 5) Add a small “Legacy Disabled” note in the architecture doc
-
-Update `ARCHITECTURE.md` with a short explicit statement:
-
-* “Direct importing `.collie` files as components is intentionally unsupported.”
-* “The only supported runtime entry point is `<Collie id="...">`.”
-* Mention that the legacy behavior is quarantined/removed.
-
-This is mainly to stop future contributors from trying to “add back” the old behavior.
+     * `encodeTemplateId(id) -> string`
+     * `decodeTemplateId(encoded) -> string` (if needed)
 
 ### Expected Outcome
 
-After A5:
-
-* It’s **impossible** (or loudly rejected) to use Collie via direct `.collie` imports.
-* The only viable path is the registry + `<Collie id>` model.
-* Codex is much less likely to hallucinate old patterns into new code.
+* Registry virtual module exists.
+* Templates compile to virtual modules.
+* Global ID uniqueness enforced.
+* No reliance on importing `.collie` from user code.
 
 ### Acceptance Criteria
 
-* Attempting to import a `.collie` file directly in a Vite React app causes a clear error telling users to use `<Collie id>`.
-* Vite plugin still supports the new virtual module registry/template flow.
-* No docs/examples in primary readme/getting-started areas show direct `.collie` imports.
-* Legacy component-name generation is not reachable from the plugin’s normal execution path.
+* A small Vite app can import `virtual:collie/registry` (indirectly via runtime later) without errors.
+* Duplicate IDs produce a clear hard error with both locations.
+* Running Vite dev server works (even if changes require restart—HMR polish comes later).
+
+---
+
+# Stage A5b — Vite Plugin Integration: Make Registry Consumable by `@collie-lang/react` Runtime
+
+**Complete: 0%**
+
+### Why this stage exists
+
+A5a produces the registry. This stage ensures the runtime consumption contract is stable and ergonomic, especially around async loading and module shapes.
+
+### Scope
+
+* align virtual module exports with runtime expectations
+* confirm template module shape (`render(props)`)
+* smooth over dev/prod differences
+* minimal DX improvements
+
+### Deliverables
+
+1. **Lock the registry export shape**
+
+   * `virtual:collie/registry` must export:
+
+     * `registry: Record<string, () => Promise<{ render: (props:any)=>any }>>`
+
+2. **Ensure template module export shape matches**
+
+   * Each template module must export `render(props)`
+   * Avoid default exports (reduces ambiguity and legacy patterns)
+
+3. **Ensure stable behavior in dev and build**
+
+   * `vite build` should produce working chunks for dynamic imports
+   * registry should not include absolute paths that break across platforms
+
+4. **Optional: expose `virtual:collie/ids`**
+
+   * Not required, but useful:
+
+     * `export const ids = ["..."] as const`
+   * Helps future VS Code completions and runtime suggestions.
+
+### Expected Outcome
+
+The runtime component can rely on a stable registry contract and not implement Vite-specific hacks.
+
+### Acceptance Criteria
+
+* `@collie-lang/react` can import the registry and call `registry[id]()` to get a module with `render`.
+* `vite build` succeeds and runtime works in production build (manual smoke test).
+
+---
+
+# Stage A5c — Early Quarantine: Hard-Disable Legacy .collie Imports and Component-Export Paths
+
+**Complete: 0%**
+
+### Why this stage exists
+
+After A5a/A5b/A5c, the only supported integration is:
+
+* Vite plugin emits:
+
+  * `virtual:collie/registry` (exports `registry`)
+  * `virtual:collie/template/<encodedId>` (each exports `render(props)`)
+* React runtime uses:
+
+  * `import { Collie } from '@collie-lang/react'`
+  * `<Collie id="...">`
+
+The biggest risk now is that legacy code paths still allow `.collie` files to be imported directly as components, or that the Vite plugin still has hooks/branches that compile real `.collie` file paths into React component modules. Codex will “helpfully” reuse those paths during later changes unless we eliminate them decisively.
+
+This stage is a **surgical quarantine**:
+
+* disable or error on direct `.collie` imports now
+* remove/cordon component-name derivation now
+* keep low-level helpers only if they are clearly unreachable and marked deprecated
+* deletion of dead legacy code happens in the final cleanup stage
+
+### Scope
+
+**Only** disable/cordon integration surfaces that conflict with the registry model:
+
+* In `@collie-lang/vite`:
+
+  * block importing real `.collie` file paths from app code
+  * ensure only virtual IDs are used to load compiled templates
+  * eliminate reachable branches that return component modules
+* In docs/examples/templates:
+
+  * remove “import `.collie` as component” examples (first-impression surfaces)
+* In compiler exports:
+
+  * prevent legacy-sounding APIs from being “the obvious way,” without necessarily deleting them yet
+
+### Deliverables
+
+## 1) Vite plugin: Explicitly error on direct `.collie` imports
+
+After A5, `.collie` should **not** be imported in user code. Only virtual modules are legal:
+
+* ✅ allowed:
+
+  * `virtual:collie/registry`
+  * `virtual:collie/template/<encodedId>`
+* ❌ disallowed:
+
+  * any resolved module id that is a real filesystem path ending in `.collie`
+  * any `import` that points to `./Something.collie`
+
+### Implementation requirements
+
+* In the plugin’s `resolveId` and/or `load` (wherever you currently intercept `.collie`), detect when:
+
+  * the resolved ID is an actual file path that ends with `.collie`
+  * and it is **not** one of your known virtual module IDs
+
+Then throw a Vite error immediately with a **high-signal message**, like:
+
+* Title: `Direct .collie imports are not supported`
+* Message includes:
+
+  * the importer file (if available)
+  * the attempted import
+  * the correct usage:
+
+```tsx
+import { Collie } from '@collie-lang/react'
+<Collie id="Your.TemplateId" />
+```
+
+And mention that templates are discovered automatically by `@collie-lang/vite`.
+
+### Acceptance preference
+
+**Compile-time error** (during dev server transform / build) is preferred over runtime throw.
+
+---
+
+## 2) Vite plugin: Remove or hard-disable reachable legacy “component module” branches
+
+Codex drift usually comes from one of these being left reachable:
+
+* converting `.collie` to TSX component
+* exporting `default` React component
+* deriving component names based on file name or `#id`
+* “compat” plugin behavior that transforms `.collie` imports
+
+### Implementation requirements
+
+* Ensure that `@collie-lang/vite` **no longer** returns React component modules for any `.collie` file path.
+* The only code paths that compile Collie templates should be those that serve:
+
+  * `virtual:collie/template/<encodedId>`
+* If you want to preserve reference code:
+
+  * move it into `packages/vite/src/legacy/` (or similar)
+  * and ensure it is not imported anywhere
+  * add a header comment:
+
+  ```ts
+  /**
+   * @deprecated
+   * Legacy direct-import-as-component flow.
+   * Intentionally disabled in registry architecture.
+   * Do not use or re-enable.
+   */
+  ```
+
+---
+
+## 3) Registry + template module naming guardrails
+
+To avoid future “accidental import support,” the plugin should have **one clear routing rule**:
+
+* If `id === 'virtual:collie/registry'` → return registry module
+* If `id` starts with `'virtual:collie/template/'` → decode and return compiled template module
+* Otherwise:
+
+  * if it ends with `.collie` → throw error (deliverable #1)
+  * else ignore (let Vite handle)
+
+This makes it very hard for Codex to add new ad-hoc behaviors.
+
+---
+
+## 4) Docs/examples/templates: eliminate legacy import patterns (first-impression surfaces only)
+
+Do a targeted sweep (not a rewrite of everything yet) for:
+
+* README quickstarts
+* Vite plugin docs
+* example apps
+
+Remove/replace any snippet containing:
+
+* `import X from './Something.collie'`
+* `<X />` where X came from `.collie`
+* text describing “Collie compiles to a React component you import”
+
+Replace with the new canonical pattern:
+
+* `@collie-lang/react` runtime
+* `<Collie id="...">`
+* `.collie` discovered automatically by Vite plugin
+* multi-template file example with two `#id` blocks
+
+(Full docs polish happens later; this stage is about stopping drift.)
+
+---
+
+## 5) Compiler exports: add “DO NOT USE” markers to legacy-shaped APIs (no deletion yet)
+
+If there are compiler exports that still look like they support the old flow (e.g. “compile file into component”), do **one** of:
+
+* Option A (preferred): make them internal-only (not exported from package root)
+* Option B: keep exported but add loud deprecation comments and ensure docs never mention them
+* Option C: move into `legacy/` module not referenced by barrel exports
+
+Goal: Codex should not see a friendly public API that implies component-import usage.
+
+---
+
+### Expected Outcome
+
+After this stage:
+
+* Direct importing `.collie` is loudly rejected with actionable guidance.
+* The only supported mechanism is the registry + template virtual modules.
+* Codex has far fewer opportunities to “preserve legacy behavior,” reducing token waste and integration drift.
+
+### Acceptance Criteria
+
+* In a Vite project, `import Foo from './Foo.collie'` fails with a clear compile-time error telling the user to use `<Collie id="...">`.
+* `virtual:collie/registry` and `virtual:collie/template/<encodedId>` still work.
+* No README / primary docs show `.collie` direct import patterns.
+* No reachable plugin code path compiles real `.collie` filesystem modules into React components.
+
+---
+
+# Stage A5d — Vite Plugin HMR: Targeted Invalidation and No Refresh Loops
+
+**Complete: 0%**
+
+### Why this stage exists
+
+Vite plugin HMR is where “almost works” becomes “developer rage.” Your current extension already suffered from refresh loops; don’t repeat that here. This stage is explicitly about stable dev behavior.
+
+### Scope
+
+* implement HMR updates/invalidation for:
+
+  * registry module
+  * template modules derived from a changed `.collie` file
+* avoid infinite reload loops
+* full reload is allowed only when necessary
+
+### Deliverables
+
+1. **Track dependency relationships**
+
+   * Maintain in-memory mapping:
+
+     * filePath → templateIds
+     * templateId → virtual module id
+
+2. **On `.collie` file change**
+
+   * Re-parse templates for that file
+   * Update template id list (handle added/removed templates)
+   * Invalidate:
+
+     * the template virtual modules from that file
+     * the registry module
+   * Trigger appropriate HMR updates:
+
+     * Prefer `server.moduleGraph.invalidateModule(...)` + `server.ws.send(...)`
+     * If you can’t make it stable quickly, use `full-reload` but ensure it doesn’t loop
+
+3. **No loops**
+
+   * Ensure that the plugin does not:
+
+     * write files into watched directories repeatedly
+     * change virtual module IDs on each rebuild
+     * cause “registry changed” events continuously
+
+4. **Duplicate ID changes handling**
+
+   * If a file change introduces duplicates:
+
+     * surface error immediately and clearly in dev
+     * avoid repeated reload spam
+
+### Expected Outcome
+
+Editing a `.collie` file updates templates in dev without requiring a server restart and without loops.
+
+### Acceptance Criteria
+
+* Editing a `.collie` file causes:
+
+  * new output on screen (if used)
+  * no infinite reload / refresh loop
+* Adding a new `#id` block in an existing `.collie` file works without restarting.
+* Removing an id results in runtime “unknown id” error (expected) and does not crash the dev server.
 
 ---
 

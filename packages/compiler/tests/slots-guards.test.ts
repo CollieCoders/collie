@@ -30,8 +30,8 @@ Card
       {description}
 `.trim(),
     snippets: [
-      `header={<><h2>{title}</h2></>}`,
-      `body={<><p>{description}</p></>}`
+      `header={<><h2>{props?.title}</h2></>}`,
+      `body={<><p>{props?.description}</p></>}`
     ]
   },
   {
@@ -41,7 +41,7 @@ div?isVisible
   span
     "Hello"
 `.trim(),
-    snippets: [`return (isVisible) && <div`, `{(isVisible) && <div`]
+    snippets: [`return (props?.isVisible) && <div`, `{(props?.isVisible) && <div`]
   },
   {
     name: "nested guards compose correctly",
@@ -51,8 +51,8 @@ div?outerCondition
     "Nested"
 `.trim(),
     snippets: [
-      `(outerCondition) && <div`,
-      `{(innerCondition) && <span`
+      `(props?.outerCondition) && <div`,
+      `{(props?.innerCondition) && <span`
     ]
   },
   {
@@ -64,7 +64,7 @@ Card?showCard
       "Hello"
 `.trim(),
     snippets: [
-      `(showCard) && <Card`,
+      `(props?.showCard) && <Card`,
       `body={<><div className="wrapper">Hello</div></>}`
     ]
   }
