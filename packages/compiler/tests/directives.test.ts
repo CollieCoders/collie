@@ -5,6 +5,7 @@ console.log("▶ directives :: @client");
 
 const good = compile(
   `
+#id directives.client
 @client
 div
   "Hello from client land"
@@ -21,6 +22,7 @@ assert.ok(
 
 const misplaced = compile(
   `
+#id directives.misplaced
 div
   "Hi"
 @client
@@ -31,6 +33,7 @@ assert.deepEqual(misplaced.diagnostics.map((d) => d.code), ["COLLIE401"]);
 
 const duplicate = compile(
   `
+#id directives.duplicate
 @client
 @client
 div

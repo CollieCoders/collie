@@ -1,10 +1,8 @@
-import path from "node:path";
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { generateModule } from "./codegen";
 import { generateHtml } from "./html-codegen";
-import { normalizeIdentifierValue } from "./identifier";
 import { parse } from "./parser";
-import type { ParseResult } from "./parser";
+import type { ParseResult, TemplateUnit } from "./parser";
 import type { Diagnostic } from "./diagnostics";
 import type { RootNode } from "./ast";
 
@@ -47,7 +45,7 @@ export type {
   SourceSpan
 } from "./diagnostics";
 export { applyFixes, fixAllFromDiagnostics } from "./fixes";
-export type { ParseResult } from "./parser";
+export type { ParseResult, TemplateUnit } from "./parser";
 export type {
   Attribute,
   ClassAliasDecl,
@@ -122,9 +120,21 @@ export type CompileOptions = JsxCompileOptions;
 export function parseCollie(source: string, options: ParseCollieOptions = {}): CollieDocument {
   const result = parse(source, { dialect: options.dialect });
   if (!options.filename) {
-    return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics) };
+    return {
+      templates: result.templates.map((template) => ({
+        ...template,
+        diagnostics: normalizeDiagnostics(template.diagnostics)
+      })),
+      diagnostics: normalizeDiagnostics(result.diagnostics)
+    };
   }
-  return { root: result.root, diagnostics: normalizeDiagnostics(result.diagnostics, options.filename) };
+  return {
+    templates: result.templates.map((template) => ({
+      ...template,
+      diagnostics: normalizeDiagnostics(template.diagnostics, options.filename)
+    })),
+    diagnostics: normalizeDiagnostics(result.diagnostics, options.filename)
+  };
 }
 
 export function compileToJsx(
@@ -133,15 +143,16 @@ export function compileToJsx(
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
+  const template = document.templates[0];
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
   let code = createStubComponent(componentName, "jsx");
-  if (!hasErrors(diagnostics)) {
-    code = generateModule(document.root, { componentName, jsxRuntime, flavor: "jsx" });
+  if (!hasErrors(diagnostics) && template) {
+    code = generateModule(template.ast, { componentName, jsxRuntime, flavor: "jsx" });
   }
 
-  const meta = buildCompileMeta(document, options.filename);
+  const meta = buildCompileMeta(document, template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
@@ -151,15 +162,16 @@ export function compileToTsx(
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
+  const template = document.templates[0];
   const componentName = options.componentNameHint ?? "CollieTemplate";
   const jsxRuntime = options.jsxRuntime ?? "automatic";
 
   let code = createStubComponent(componentName, "tsx");
-  if (!hasErrors(diagnostics)) {
-    code = generateModule(document.root, { componentName, jsxRuntime, flavor: "tsx" });
+  if (!hasErrors(diagnostics) && template) {
+    code = generateModule(template.ast, { componentName, jsxRuntime, flavor: "tsx" });
   }
 
-  const meta = buildCompileMeta(document, options.filename);
+  const meta = buildCompileMeta(document, template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
@@ -178,13 +190,14 @@ export function compileToHtml(
 ): CompileResult {
   const document = normalizeDocument(sourceOrAst, options.filename, options.dialect);
   const diagnostics = normalizeDiagnostics(document.diagnostics, options.filename);
+  const template = document.templates[0];
 
   let code = createStubHtml();
-  if (!hasErrors(diagnostics)) {
-    code = generateHtml(document.root);
+  if (!hasErrors(diagnostics) && template) {
+    code = generateHtml(template.ast);
   }
 
-  const meta = buildCompileMeta(document, options.filename);
+  const meta = buildCompileMeta(document, template, options.filename);
   return { code, diagnostics, map: undefined, meta };
 }
 
@@ -207,11 +220,20 @@ function normalizeDocument(
     if (!filename) {
       return sourceOrAst;
     }
-    return { root: sourceOrAst.root, diagnostics: attachFilename(sourceOrAst.diagnostics, filename) };
+    return attachFilenameToDocument(sourceOrAst, filename);
   }
 
   if (isRootNode(sourceOrAst)) {
-    return { root: sourceOrAst, diagnostics: [] };
+    const id = sourceOrAst.id ?? sourceOrAst.rawId ?? "";
+    const rawId = sourceOrAst.rawId ?? sourceOrAst.id ?? "";
+    const template: TemplateUnit = {
+      id,
+      rawId,
+      span: sourceOrAst.idTokenSpan,
+      ast: sourceOrAst,
+      diagnostics: []
+    };
+    return { templates: [template], diagnostics: [] };
   }
 
   throw new TypeError("Collie compiler expected source text, a parsed document, or a root node.");
@@ -225,7 +247,7 @@ function isCollieDocument(value: unknown): value is CollieDocument {
   return (
     !!value &&
     typeof value === "object" &&
-    isRootNode((value as { root?: unknown }).root) &&
+    Array.isArray((value as { templates?: unknown }).templates) &&
     Array.isArray((value as { diagnostics?: unknown }).diagnostics)
   );
 }
@@ -250,34 +272,35 @@ function createStubHtml(): string {
   return "";
 }
 
-function buildCompileMeta(document: CollieDocument, filename?: string): CollieCompileMeta | undefined {
+function buildCompileMeta(
+  document: CollieDocument,
+  template: TemplateUnit | undefined,
+  filename?: string
+): CollieCompileMeta | undefined {
   const meta: CollieCompileMeta = {};
   if (filename) {
     meta.filename = filename;
   }
-  if (document.root.rawId) {
-    meta.rawId = document.root.rawId;
+  if (template?.rawId) {
+    meta.rawId = template.rawId;
   }
-
-  const directiveId = document.root.id;
-  const fallbackId = directiveId ?? deriveIdentifierFromFilename(filename);
-  if (fallbackId) {
-    meta.id = fallbackId;
+  if (template?.id) {
+    meta.id = template.id;
   }
 
   return meta.id || meta.rawId || meta.filename ? meta : undefined;
 }
-
-function deriveIdentifierFromFilename(filename?: string): string | undefined {
+function attachFilenameToDocument(document: CollieDocument, filename?: string): CollieDocument {
   if (!filename) {
-    return undefined;
+    return document;
   }
-  const basename = path.basename(filename, ".collie");
-  return normalizeIdentifierValue(basename);
-}
-
-function attachFilename(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {
-  return normalizeDiagnostics(diagnostics, filename);
+  return {
+    templates: document.templates.map((template) => ({
+      ...template,
+      diagnostics: normalizeDiagnostics(template.diagnostics, filename)
+    })),
+    diagnostics: normalizeDiagnostics(document.diagnostics, filename)
+  };
 }
 
 function normalizeDiagnostics(diagnostics: Diagnostic[], filename?: string): Diagnostic[] {

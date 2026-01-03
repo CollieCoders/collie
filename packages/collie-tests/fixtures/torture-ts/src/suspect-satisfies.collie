@@ -1,3 +1,4 @@
+#id suspect-satisfies
 component Torture satisfies { foo: string } {
   <div>{foo}</div>
 }

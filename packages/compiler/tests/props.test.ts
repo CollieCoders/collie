@@ -12,6 +12,7 @@ function expectNoDiagnostics(result: ReturnType<typeof compile>, name: string): 
 
 const typedResult = compile(
   `
+#id props.typed
 props
   name: string
 
@@ -31,6 +32,7 @@ assert.ok(
 
 const looseResult = compile(
   `
+#id props.loose
 div
   h3 Hello, {{ props.name }}!
 `.trim()
@@ -51,6 +53,7 @@ assert.ok(
 
 const bareIdentifierResult = compile(
   `
+#id props.bare
 div
   h3 Hello, {{ name }}!
 `.trim()

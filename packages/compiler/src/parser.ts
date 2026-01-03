@@ -17,12 +17,19 @@ import type {
 } from "./ast";
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
-import { hasWhitespace, isPascalCase, normalizeIdentifierValue, toPascalCase } from "./identifier";
 import { enforceDialect } from "./dialect";
 import { enforceProps } from "./props";
 
+export interface TemplateUnit {
+  id: string;
+  rawId: string;
+  span?: SourceSpan;
+  ast: RootNode;
+  diagnostics: Diagnostic[];
+}
+
 export interface ParseResult {
-  root: RootNode;
+  templates: TemplateUnit[];
   diagnostics: Diagnostic[];
 }
 
@@ -67,6 +74,7 @@ interface ConditionalChainState {
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
 const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
+const TEMPLATE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]*$/;
 
 function getIndentLevel(line: string): number {
   const match = line.match(/^\s*/);
@@ -100,28 +108,203 @@ function getIdValueSpan(
   return createSpan(lineNumber, column, valueLength, lineOffset);
 }
 
+interface TemplateHeader {
+  id: string;
+  rawId: string;
+  span?: SourceSpan;
+  bodyStartIndex: number;
+}
+
 export function parse(source: string, options: ParseOptions = {}): ParseResult {
+  const diagnostics: Diagnostic[] = [];
+  const templates: TemplateUnit[] = [];
+
+  const normalized = source.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const lineOffsets = buildLineOffsets(lines);
+
+  let currentHeader: TemplateHeader | null = null;
+  let sawIdBlock = false;
+  const seenIds = new Map<string, SourceSpan | undefined>();
+
+  const finalizeTemplate = (endIndex: number): void => {
+    if (!currentHeader) {
+      return;
+    }
+    const result = parseTemplateBlock(lines, lineOffsets, currentHeader.bodyStartIndex, endIndex, options);
+    const prefixedDiagnostics = prefixDiagnostics(result.diagnostics, currentHeader.id);
+    const unit: TemplateUnit = {
+      id: currentHeader.id,
+      rawId: currentHeader.rawId,
+      span: currentHeader.span,
+      ast: result.root,
+      diagnostics: prefixedDiagnostics
+    };
+    templates.push(unit);
+    diagnostics.push(...prefixedDiagnostics);
+    currentHeader = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const lineNumber = i + 1;
+    const lineOffset = lineOffsets[i];
+
+    if (/^\s*$/.test(rawLine)) {
+      continue;
+    }
+
+    const indentMatch = rawLine.match(/^\s*/) ?? [""];
+    const indent = indentMatch[0].length;
+    const lineContent = rawLine.slice(indent);
+    const trimmed = lineContent.trimEnd();
+
+    const idMatch = trimmed.match(/^#id\b(.*)$/);
+    if (idMatch) {
+      if (indent !== 0) {
+        pushDiag(
+          diagnostics,
+          "COLLIE701",
+          "#id directives must appear at the top level.",
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+        continue;
+      }
+
+      finalizeTemplate(i);
+      sawIdBlock = true;
+
+      const remainderRaw = idMatch[1] ?? "";
+      if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          'Invalid #id directive syntax. Use "#id <id>".',
+          lineNumber,
+          indent + 1,
+          lineOffset,
+          trimmed.length
+        );
+      }
+      let valuePart = remainderRaw.trim();
+      if (valuePart.startsWith("=") || valuePart.startsWith(":")) {
+        valuePart = valuePart.slice(1).trim();
+      }
+
+      const valueSpan = getIdValueSpan(
+        lineContent,
+        indent,
+        lineNumber,
+        lineOffset,
+        "#id".length,
+        valuePart.length
+      );
+      const valueColumn = valueSpan?.start.col ?? indent + 1;
+      const valueLength = valueSpan ? valuePart.length : trimmed.length;
+
+      if (!valuePart) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          "#id directives must specify an identifier value.",
+          lineNumber,
+          valueColumn,
+          lineOffset,
+          valueLength
+        );
+      } else if (!TEMPLATE_ID_PATTERN.test(valuePart)) {
+        pushDiag(
+          diagnostics,
+          "COLLIE702",
+          'Invalid #id value. IDs must match "^[A-Za-z][A-Za-z0-9._-]*$".',
+          lineNumber,
+          valueColumn,
+          lineOffset,
+          valueLength
+        );
+      }
+
+      if (valuePart && TEMPLATE_ID_PATTERN.test(valuePart)) {
+        const previous = seenIds.get(valuePart);
+        if (previous) {
+          const previousLine = previous.start.line;
+          pushDiag(
+            diagnostics,
+            "COLLIE703",
+            `Duplicate #id "${valuePart}" (first declared on line ${previousLine}).`,
+            lineNumber,
+            valueColumn,
+            lineOffset,
+            valueLength
+          );
+        } else {
+          seenIds.set(valuePart, valueSpan);
+        }
+      }
+
+      currentHeader = {
+        id: valuePart,
+        rawId: valuePart,
+        span: valueSpan,
+        bodyStartIndex: i + 1
+      };
+      continue;
+    }
+
+    if (!sawIdBlock && !currentHeader) {
+      pushDiag(
+        diagnostics,
+        "COLLIE701",
+        "Content before the first #id block is not allowed.",
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        trimmed.length
+      );
+    }
+  }
+
+  finalizeTemplate(lines.length);
+
+  if (!sawIdBlock) {
+    pushDiag(
+      diagnostics,
+      "COLLIE701",
+      "A .collie file must contain at least one #id block.",
+      1,
+      1,
+      0
+    );
+  }
+
+  return { templates, diagnostics };
+}
+
+function parseTemplateBlock(
+  lines: string[],
+  lineOffsets: number[],
+  startIndex: number,
+  endIndex: number,
+  options: ParseOptions
+): { root: RootNode; diagnostics: Diagnostic[] } {
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
   let propsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
-  let sawNonIdTopLevelDirective = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
   const branchLocations: BranchLocation[] = [];
 
-  const normalized = source.replace(/\r\n?/g, "\n");
-  const lines = normalized.split("\n");
+  let i = startIndex;
 
-  let offset = 0;
-  let i = 0;
-
-  while (i < lines.length) {
+  while (i < endIndex) {
     const rawLine = lines[i];
     const lineNumber = i + 1;
-    const lineOffset = offset;
-    offset += rawLine.length + 1;
+    const lineOffset = lineOffsets[i];
     i++;
 
     if (/^\s*$/.test(rawLine)) {
@@ -193,134 +376,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
       conditionalChains.delete(level);
     }
 
-    const idMatch = trimmed.match(/^(#?id)\b(.*)$/i);
-    if (idMatch) {
-      const column = indent + 1;
-      const idTokenBase = idMatch[1];
-      const remainderRaw = idMatch[2] ?? "";
-      const immediateSuffix = remainderRaw.startsWith(":") || remainderRaw.startsWith("=") ? remainderRaw[0] : "";
-      const idToken = `${idTokenBase}${immediateSuffix}`;
-      if (level !== 0) {
-        pushDiag(
-          diagnostics,
-          "COLLIE701",
-          "id directives (#id or id) must appear at the top level before any other directives.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      if (root.rawId) {
-        pushDiag(
-          diagnostics,
-          "COLLIE703",
-          "id can only appear once per file.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      if (sawTopLevelTemplateNode || sawNonIdTopLevelDirective) {
-        pushDiag(
-          diagnostics,
-          "COLLIE701",
-          "id directives must appear before props, classes, @client, or markup.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      if (remainderRaw && !/^[\s:=]/.test(remainderRaw)) {
-        pushDiag(
-          diagnostics,
-          "COLLIE702",
-          "Invalid id directive syntax. Use '#id value', '#id = value', '#id: value', 'id value', 'id = value', or 'id: value'.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      let valuePart = remainderRaw.trim();
-      if (valuePart.startsWith("=") || valuePart.startsWith(":")) {
-        valuePart = valuePart.slice(1).trim();
-      }
-      if (!valuePart) {
-        pushDiag(
-          diagnostics,
-          "COLLIE702",
-          "id directives must specify an identifier value.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      if (hasWhitespace(valuePart)) {
-        pushDiag(
-          diagnostics,
-          "COLLIE702",
-          "id values cannot contain whitespace.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      const normalizedId = normalizeIdentifierValue(valuePart);
-      if (!normalizedId) {
-        pushDiag(
-          diagnostics,
-          "COLLIE702",
-          "id values must include characters other than the '-collie' suffix.",
-          lineNumber,
-          column,
-          lineOffset,
-          trimmed.length
-        );
-        continue;
-      }
-      const valueSpan = getIdValueSpan(
-        lineContent,
-        indent,
-        lineNumber,
-        lineOffset,
-        idTokenBase.length,
-        valuePart.length
-      );
-      if (!isPascalCase(valuePart)) {
-        const suggested = toPascalCase(valuePart);
-        diagnostics.push({
-          severity: "error",
-          code: "COLLIE_ID_NOT_PASCAL_CASE",
-          message: `The #id value must be PascalCase. Suggested: "${suggested || "MyComponent"}".`,
-          span: valueSpan,
-          range: valueSpan,
-          fix:
-            valueSpan && suggested
-              ? {
-                  range: valueSpan,
-                  replacementText: suggested
-                }
-              : undefined
-        });
-      }
-      root.rawId = valuePart;
-      root.id = normalizedId;
-      root.idToken = idToken;
-      root.idTokenSpan = createSpan(lineNumber, column, idToken.length, lineOffset);
-      continue;
-    }
-
     if (trimmed === "classes") {
       if (level !== 0) {
         pushDiag(
@@ -347,7 +402,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
           root.classAliases = { aliases: [] };
         }
         classesBlockLevel = level;
-        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -376,7 +430,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
       } else {
         root.props = { fields: [] };
         propsBlockLevel = level;
-        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -414,7 +467,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         );
       } else {
         root.clientComponent = true;
-        sawNonIdTopLevelDirective = true;
       }
       continue;
     }
@@ -484,7 +536,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
       addChildToParent(parent, forNode);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
-        sawNonIdTopLevelDirective = true;
       }
       stack.push({ node: forNode, level });
       continue;
@@ -515,7 +566,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
       addChildToParent(parent, chain);
       if (parent === root) {
         sawTopLevelTemplateNode = true;
-        sawNonIdTopLevelDirective = true;
       }
       conditionalChains.set(level, { node: chain, level, hasElse: false });
       branchLocations.push({
@@ -740,11 +790,10 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
       const payload = lineContent.slice(1).trim();
       
       // If it's a function or expression that starts with ( or <, collect multiline content
-      if (payload.endsWith("(") || payload.endsWith("<") || (i < lines.length && level < getIndentLevel(lines[i]))) {
+      if (payload.endsWith("(") || payload.endsWith("<") || (i < endIndex && level < getIndentLevel(lines[i]))) {
         // Collect all indented children
         let jsxContent = payload;
-        const jsxStartLine = i;
-        while (i < lines.length) {
+        while (i < endIndex) {
           const nextRaw = lines[i];
           const nextIndent = getIndentLevel(nextRaw);
           const nextTrimmed = nextRaw.trim();
@@ -773,7 +822,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
-          sawNonIdTopLevelDirective = true;
         }
         continue;
       }
@@ -783,7 +831,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         addChildToParent(parent, jsxNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
-          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -795,7 +842,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
-          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -807,7 +853,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         addChildToParent(parent, exprNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
-          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -820,7 +865,7 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
     if (trimmed.includes("(") && !trimmed.includes(")")) {
       // Multiline attributes - collect subsequent lines
       let parenDepth = (trimmed.match(/\(/g) || []).length - (trimmed.match(/\)/g) || []).length;
-      while (multilineEnd < lines.length && parenDepth > 0) {
+      while (multilineEnd < endIndex && parenDepth > 0) {
         const nextRaw = lines[multilineEnd];
         multilineEnd++;
         fullLine += "\n" + nextRaw;
@@ -838,7 +883,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
         addChildToParent(parent, textNode);
         if (parent === root) {
           sawTopLevelTemplateNode = true;
-          sawNonIdTopLevelDirective = true;
         }
       }
       continue;
@@ -847,7 +891,6 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
     addChildToParent(parent, element);
     if (parent === root) {
       sawTopLevelTemplateNode = true;
-      sawNonIdTopLevelDirective = true;
     }
     stack.push({ node: element, level });
   }
@@ -877,6 +920,29 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
   }
 
   return { root, diagnostics };
+}
+
+function buildLineOffsets(lines: string[]): number[] {
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    offsets.push(offset);
+    offset += line.length + 1;
+  }
+  return offsets;
+}
+
+function prefixDiagnostics(diagnostics: Diagnostic[], templateId?: string): Diagnostic[] {
+  if (!templateId) {
+    return diagnostics;
+  }
+  const prefix = `In template "${templateId}": `;
+  return diagnostics.map((diag) => {
+    if (diag.message.startsWith(prefix)) {
+      return diag;
+    }
+    return { ...diag, message: `${prefix}${diag.message}` };
+  });
 }
 
 function cleanupConditionalChains(state: Map<number, ConditionalChainState>, level: number): void {

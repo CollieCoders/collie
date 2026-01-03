@@ -1,3 +1,4 @@
+#id App
 div.app
   h1 Hello from Collie
   p Vite build smoke test
