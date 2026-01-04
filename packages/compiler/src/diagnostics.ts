@@ -8,6 +8,7 @@ export type DiagnosticCode =
   | "COLLIE005"
   | "COLLIE101"
   | "COLLIE102"
+  | "COLLIE103"
   | "COLLIE201"
   | "COLLIE202"
   | "COLLIE203"

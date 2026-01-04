@@ -408,21 +408,37 @@ function parseTemplateBlock(
     }
 
     if (trimmed === "props") {
+      pushDiag(
+        diagnostics,
+        "COLLIE103",
+        "`props` must be declared using `#props`.",
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        trimmed.length
+      );
+      if (level === 0) {
+        propsBlockLevel = level;
+      }
+      continue;
+    }
+
+    if (trimmed === "#props") {
       if (level !== 0) {
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "Props block must be at the top level.",
+          "#props block must be at the top level.",
           lineNumber,
           indent + 1,
           lineOffset,
           trimmed.length
         );
-      } else if (sawTopLevelTemplateNode || root.props) {
+      } else if (root.props) {
         pushDiag(
           diagnostics,
           "COLLIE101",
-          "Props block must appear before any template nodes.",
+          "Only one #props block is allowed per #id.",
           lineNumber,
           indent + 1,
           lineOffset,
@@ -430,6 +446,8 @@ function parseTemplateBlock(
         );
       } else {
         root.props = { fields: [] };
+      }
+      if (level === 0) {
         propsBlockLevel = level;
       }
       continue;
@@ -477,7 +495,7 @@ function parseTemplateBlock(
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "Props lines must be indented two spaces under the props header.",
+          "#props lines must be indented two spaces under the #props header.",
           lineNumber,
           indent + 1,
           lineOffset

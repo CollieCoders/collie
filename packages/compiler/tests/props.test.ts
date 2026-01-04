@@ -13,7 +13,7 @@ function expectNoDiagnostics(result: ReturnType<typeof compile>, name: string): 
 const typedResult = compile(
   `
 #id props.typed
-props
+#props
   name: string
 
 div
@@ -70,6 +70,20 @@ assert.ok(
 assert.ok(
   bareIdentifierResult.code.includes("props?.name"),
   "Bare identifier usage without props should use optional chaining"
+);
+
+const legacyResult = compile(
+  `
+#id props.legacy
+props
+  message: string
+`.trim()
+);
+assert.equal(legacyResult.diagnostics.length, 1, "Legacy props syntax should be rejected");
+assert.equal(legacyResult.diagnostics[0]?.code, "COLLIE103");
+assert.ok(
+  legacyResult.diagnostics[0]?.message.includes("`props` must be declared using `#props`"),
+  "Legacy props syntax should require the #props directive"
 );
 
 console.log("✅ props tests passed.");
