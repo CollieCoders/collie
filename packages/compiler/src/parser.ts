@@ -350,10 +350,15 @@ function parseTemplateBlock(
       classesBlockLevel = null;
     }
 
-    const top = stack[stack.length - 1];
     const isInPropsBlock = propsBlockLevel !== null && level > propsBlockLevel;
     const isInClassesBlock = classesBlockLevel !== null && level > classesBlockLevel;
-    if (level > top.level + 1 && !isInPropsBlock && !isInClassesBlock) {
+
+    while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    const parentLevel = stack[stack.length - 1].level;
+    if (level > parentLevel + 1 && !isInPropsBlock && !isInClassesBlock) {
       pushDiag(
         diagnostics,
         "COLLIE003",
@@ -362,11 +367,7 @@ function parseTemplateBlock(
         indent + 1,
         lineOffset
       );
-      level = top.level + 1;
-    }
-
-    while (stack.length > 1 && stack[stack.length - 1].level >= level) {
-      stack.pop();
+      level = parentLevel + 1;
     }
 
     cleanupConditionalChains(conditionalChains, level);
@@ -889,11 +890,8 @@ function parseTemplateBlock(
     }
 
     const element = elementResult.node;
-    if (
-      element.type === "Element" &&
-      !elementResult.hasAttributeGroup &&
-      element.children.length === 0
-    ) {
+    let hasIndentedAttributeLines = false;
+    if ((element.type === "Element" || element.type === "Component") && element.children.length === 0) {
       const indentedAttributes = collectIndentedAttributeLines(
         lines,
         lineOffsets,
@@ -904,6 +902,7 @@ function parseTemplateBlock(
       );
       if (indentedAttributes.attributes.length > 0) {
         element.attributes.push(...indentedAttributes.attributes);
+        hasIndentedAttributeLines = true;
       }
       i = indentedAttributes.nextIndex;
     }
@@ -913,6 +912,10 @@ function parseTemplateBlock(
       sawTopLevelTemplateNode = true;
     }
     stack.push({ node: element, level });
+    if (hasIndentedAttributeLines) {
+      // Treat attribute-only lines as an intermediate indent step for children.
+      stack.push({ node: element, level: level + 1 });
+    }
   }
 
   if (root.classAliases) {

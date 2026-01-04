@@ -17,7 +17,8 @@
     "test:collie": "pnpm -C packages/collie-tests test",
     "test:cli": "pnpm -C packages/collie-tests test:cli",
     "test:integration": "pnpm -C packages/collie-tests test",
-    "test:watch": "pnpm -C packages/collie-tests test:watch"
+    "test:watch": "pnpm -C packages/collie-tests test:watch",
+    "relink": "scripts/reset-collie-links.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",

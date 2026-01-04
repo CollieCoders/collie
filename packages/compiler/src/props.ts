@@ -380,7 +380,8 @@ function scanExpression(expression: string): UsageOccurrence[] {
           i++;
         }
         const name = expression.slice(start, i);
-        if (name === "props") {
+        const prevNonSpace = findPreviousNonSpace(expression, start - 1);
+        if (name === "props" && prevNonSpace !== ".") {
           const namespace = readNamespaceAccess(expression, i);
           if (namespace) {
             occurrences.push({
@@ -393,7 +394,6 @@ function scanExpression(expression: string): UsageOccurrence[] {
             continue;
           }
         }
-        const prevNonSpace = findPreviousNonSpace(expression, start - 1);
         if (prevNonSpace !== ".") {
           occurrences.push({ name, kind: "local", index: start, length: name.length });
         }
