@@ -44,3 +44,41 @@ div
 assert.deepEqual(duplicate.diagnostics.map((d) => d.code), ["COLLIE402"]);
 
 console.log("✅ @client directive tests passed.");
+
+console.log("▶ directives :: conditionals");
+
+const conditionalsGood = compile(
+  `
+#id directives.conditionals
+div
+  @if loggedIn
+    span | Welcome
+  @elseIf loading
+    span | Loading...
+  @else
+    span | Please log in
+`.trim()
+);
+assert.deepEqual(conditionalsGood.diagnostics.map((d) => d.code), []);
+
+const elseWithoutIf = compile(
+  `
+#id directives.elseWithoutIf
+@else
+  div | Invalid
+`.trim()
+);
+assert.deepEqual(elseWithoutIf.diagnostics.map((d) => d.code), ["COLLIE206"]);
+
+const elseNested = compile(
+  `
+#id directives.elseNested
+@if a
+  div
+    @else
+      span
+`.trim()
+);
+assert.deepEqual(elseNested.diagnostics.map((d) => d.code), ["COLLIE206"]);
+
+console.log("✅ conditional directive tests passed.");

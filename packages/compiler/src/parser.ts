@@ -1029,23 +1029,61 @@ function parseConditionalHeader(
   diagnostics: Diagnostic[]
 ): ConditionalHeaderResult | null {
   const trimmed = lineContent.trimEnd();
-  const pattern = kind === "if" ? /^@if\s*\((.*)\)(.*)$/ : /^@elseIf\s*\((.*)\)(.*)$/;
-  const match = trimmed.match(pattern);
-  if (!match) {
+  const token = kind === "if" ? "@if" : "@elseIf";
+  if (!trimmed.startsWith(token)) {
     pushDiag(
       diagnostics,
       "COLLIE201",
-      kind === "if" ? "Invalid @if syntax. Use @if (condition)." : "Invalid @elseIf syntax. Use @elseIf (condition).",
+      kind === "if" ? "Invalid @if syntax. Use @if <condition>." : "Invalid @elseIf syntax. Use @elseIf <condition>.",
       lineNumber,
       column,
       lineOffset,
-      trimmed.length || 3
+      trimmed.length || token.length
     );
     return null;
   }
-  const token = kind === "if" ? "@if" : "@elseIf";
   const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
-  const testRaw = match[1];
+  const remainder = trimmed.slice(token.length);
+  if (!remainder.trim()) {
+    pushDiag(
+      diagnostics,
+      "COLLIE201",
+      kind === "if" ? "@if condition cannot be empty." : "@elseIf condition cannot be empty.",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || token.length
+    );
+    return null;
+  }
+
+  const remainderTrimmed = remainder.trimStart();
+  const usesParens = remainderTrimmed.startsWith("(");
+  let testRaw = "";
+  let remainderRaw = "";
+
+  if (usesParens) {
+    const openIndex = trimmed.indexOf("(", token.length);
+    const closeIndex = trimmed.lastIndexOf(")");
+    if (openIndex === -1 || closeIndex <= openIndex) {
+      pushDiag(
+        diagnostics,
+        "COLLIE201",
+        kind === "if" ? "Invalid @if syntax. Use @if <condition>." : "Invalid @elseIf syntax. Use @elseIf <condition>.",
+        lineNumber,
+        column,
+        lineOffset,
+        trimmed.length || token.length
+      );
+      return null;
+    }
+    testRaw = trimmed.slice(openIndex + 1, closeIndex);
+    remainderRaw = trimmed.slice(closeIndex + 1);
+  } else {
+    testRaw = remainderTrimmed;
+    remainderRaw = "";
+  }
+
   const test = testRaw.trim();
   if (!test) {
     pushDiag(
@@ -1059,11 +1097,11 @@ function parseConditionalHeader(
     );
     return null;
   }
-  const openParenIndex = trimmed.indexOf("(", token.length);
   const testLeadingWhitespace = testRaw.length - testRaw.trimStart().length;
-  const testColumn = column + Math.max(openParenIndex, token.length) + 1 + testLeadingWhitespace;
+  const testColumn = usesParens
+    ? column + trimmed.indexOf("(", token.length) + 1 + testLeadingWhitespace
+    : column + token.length + (remainder.length - remainder.trimStart().length) + testLeadingWhitespace;
   const testSpan = createSpan(lineNumber, testColumn, test.length, lineOffset);
-  const remainderRaw = match[2] ?? "";
   const inlineBody = remainderRaw.trim();
   const remainderOffset = trimmed.length - remainderRaw.length;
   const leadingWhitespace = remainderRaw.length - inlineBody.length;
