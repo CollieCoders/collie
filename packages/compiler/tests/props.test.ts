@@ -104,6 +104,55 @@ assert.ok(
   "Bare identifier usage without props should use optional chaining"
 );
 
+const conditionalPropsResult = compile(
+  `
+#id props.conditional
+
+#props
+  loggedIn: boolean
+
+@if loggedIn
+  div | Hi
+`.trim(),
+  { dialect: defaultDialect }
+);
+assert.deepEqual(
+  conditionalPropsResult.diagnostics.map((diag) => diag.code),
+  [],
+  "Props declared in #props should be valid in @if conditions"
+);
+
+const conditionalMissingResult = compile(
+  `
+#id props.conditionalMissing
+
+@if loggedIn
+  div | Hi
+`.trim(),
+  { dialect: defaultDialect }
+);
+assert.ok(
+  conditionalMissingResult.diagnostics.some((diag) => diag.code === "props.missingDeclaration"),
+  "Missing props in @if conditions should be reported"
+);
+assert.ok(
+  conditionalMissingResult.diagnostics[0]?.message.includes("`#props`"),
+  "Missing props diagnostics should reference #props"
+);
+
+const namespaceMissingResult = compile(
+  `
+#id props.namespaceMissing
+
+div | {{ props.loggedIn }}
+`.trim(),
+  { dialect: defaultDialect }
+);
+assert.ok(
+  namespaceMissingResult.diagnostics.some((diag) => diag.code === "props.missingDeclaration"),
+  "Missing props namespace usages should be reported"
+);
+
 const legacyResult = compile(
   `
 #id props.legacy

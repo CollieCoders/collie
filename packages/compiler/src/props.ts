@@ -207,6 +207,17 @@ export function enforceProps(
       if (occurrence.kind === "namespace") {
         recordUsage(usedNamespace, name, usageSpan);
         usedAny.add(name);
+        if (
+          propsConfig.requireDeclarationForLocals &&
+          !declaredProps.has(name) &&
+          !missingReported.has(name)
+        ) {
+          const severity = levelToSeverity(propsConfig.diagnostics.missingDeclaration);
+          if (severity) {
+            diagnostics.push(createMissingDeclarationDiagnostic(name, severity, usageSpan));
+            missingReported.add(name);
+          }
+        }
         if (flagNamespaceStyle && !namespaceStyleReported.has(name)) {
           const severity = levelToSeverity(propsConfig.diagnostics.style);
           if (severity) {
@@ -295,7 +306,7 @@ function createMissingDeclarationDiagnostic(
   return {
     severity,
     code: "props.missingDeclaration",
-    message: `Prop "${name}" is used without a props declaration.`,
+    message: `Prop \`${name}\` is used but not declared in \`#props\`.`,
     span,
     data: {
       kind: "addPropDeclaration",
