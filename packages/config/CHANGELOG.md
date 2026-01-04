@@ -1,5 +1,11 @@
 # @collie-lang/config
 
+## 1.0.1
+
+### Patch Changes
+
+- Version 5
+
 ## 1.0.0
 
 ### Major Changes

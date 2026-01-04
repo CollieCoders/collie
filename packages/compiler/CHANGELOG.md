@@ -1,5 +1,13 @@
 # @collie-lang/compiler
 
+## 6.0.1
+
+### Patch Changes
+
+- Version 5
+- Updated dependencies
+  - @collie-lang/config@1.0.1
+
 ## 6.0.0
 
 ### Major Changes
