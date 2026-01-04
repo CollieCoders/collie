@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { compile } from "../src/index";
+import { compile, compileTemplate, parseCollie } from "../src/index";
 
 console.log("▶ directives :: @client");
 
@@ -82,3 +82,32 @@ const elseNested = compile(
 assert.deepEqual(elseNested.diagnostics.map((d) => d.code), ["COLLIE206"]);
 
 console.log("✅ conditional directive tests passed.");
+
+console.log("▶ directives :: conditional codegen parity");
+
+const conditionalCodeSource = `
+#id directives.codegen
+@if loggedIn
+  div | Hi
+@else
+  div | Bye
+`.trim();
+
+const conditionalDocument = parseCollie(conditionalCodeSource);
+const conditionalTemplate = conditionalDocument.templates[0];
+assert.ok(conditionalTemplate, "Conditional template should parse");
+
+const conditionalCodegen = compileTemplate(conditionalTemplate, { flavor: "jsx" });
+assert.deepEqual(
+  conditionalCodegen.diagnostics.map((d) => d.code),
+  [],
+  "Conditional codegen should not emit diagnostics"
+);
+assert.ok(
+  conditionalCodegen.code.includes("return (props?.loggedIn) ? <div>Hi</div> : <div>Bye</div>;"),
+  "Conditional codegen should emit a ternary without extra wrappers"
+);
+const loggedInCount = (conditionalCodegen.code.match(/props\?\.\s*loggedIn/g) ?? []).length;
+assert.equal(loggedInCount, 1, "Conditional codegen should not duplicate condition evaluation");
+
+console.log("✅ conditional codegen parity tests passed.");
