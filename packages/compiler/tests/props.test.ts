@@ -1,5 +1,37 @@
 import assert from "node:assert/strict";
-import { compile } from "../src/index";
+import { compile, parseCollie } from "../src/index";
+
+const defaultDialect = {
+  tokens: {
+    if: { preferred: "@if", allow: ["@if"], onDisallowed: "error" },
+    else: { preferred: "@else", allow: ["@else"], onDisallowed: "error" },
+    elseIf: { preferred: "@elseIf", allow: ["@elseIf"], onDisallowed: "error" },
+    for: { preferred: "@for", allow: ["@for"], onDisallowed: "error" },
+    id: {
+      preferred: "id",
+      allow: ["#id", "#id:", "#id=", "id", "id:", "id="],
+      onDisallowed: "warn"
+    }
+  },
+  normalizeOnFormat: true,
+  normalizeOnBuild: false,
+  props: {
+    allowPropsNamespace: true,
+    allowDeclaredLocals: true,
+    requireDeclarationForLocals: true,
+    requirePropsBlockWhen: {
+      enabled: false,
+      minUniquePropsUsed: 2,
+      severity: "warn"
+    },
+    preferAccessStyle: "either",
+    diagnostics: {
+      missingDeclaration: "error",
+      unusedDeclaration: "warn",
+      style: "info"
+    }
+  }
+} as const;
 
 function expectNoDiagnostics(result: ReturnType<typeof compile>, name: string): void {
   const codes = result.diagnostics.map((d) => d.code ?? "");
@@ -84,6 +116,34 @@ assert.equal(legacyResult.diagnostics[0]?.code, "COLLIE103");
 assert.ok(
   legacyResult.diagnostics[0]?.message.includes("`props` must be declared using `#props`"),
   "Legacy props syntax should require the #props directive"
+);
+
+const multiTemplate = parseCollie(
+  `
+#id props.multiA
+#props
+  foo: string
+
+div | {{ foo }}
+
+#id props.multiB
+div | {{ foo }}
+`.trim(),
+  { dialect: defaultDialect }
+);
+assert.equal(multiTemplate.templates.length, 2, "Multi-template parse should return two templates");
+const multiA = multiTemplate.templates.find((template) => template.id === "props.multiA");
+const multiB = multiTemplate.templates.find((template) => template.id === "props.multiB");
+assert.ok(multiA, "Template props.multiA should be present");
+assert.ok(multiB, "Template props.multiB should be present");
+assert.deepEqual(
+  multiA?.diagnostics.map((diag) => diag.code),
+  [],
+  "Declared props should be valid inside their own template"
+);
+assert.ok(
+  multiB?.diagnostics.some((diag) => diag.code === "props.missingDeclaration"),
+  "Props used in another template should not be treated as declared"
 );
 
 console.log("✅ props tests passed.");
