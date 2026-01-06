@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import fg from "fast-glob";
 import { diffLines } from "diff";
@@ -1336,8 +1335,8 @@ function findViteConfigFile(root: string): string | null {
 
 function readCliPackageInfo(): { version: string; dependencies: Record<string, string> } {
   try {
-    const dir = path.dirname(fileURLToPath(import.meta.url));
-    const pkgPath = path.resolve(dir, "..", "package.json");
+    // Use __dirname in compiled CJS output to locate package.json
+    const pkgPath = path.resolve(__dirname, "..", "package.json");
     const raw = readFileSync(pkgPath, "utf8");
     const pkg = JSON.parse(raw);
     const version = typeof pkg.version === "string" ? pkg.version : "latest";

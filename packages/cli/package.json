@@ -3,17 +3,15 @@
   "version": "1.1.2",
   "description": "Collie CLI.",
   "license": "MIT",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "collie": "./dist/index.cjs"
+    "collie": "./dist/index.js"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -34,7 +32,7 @@
     "@collie-lang/compiler": "^1.1.2",
     "@collie-lang/config": "^1.1.2",
     "@collie-lang/next": "^1.1.1",
-    "@collie-lang/vite": "^1.1.1",
+    "@collie-lang/vite": "^1.1.2",
     "@collie-lang/webpack": "^1.1.1",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
