@@ -1,5 +1,29 @@
 # @collie-lang/cli
 
+## 3.0.1
+
+### Patch Changes
+
+- Version 5
+- Updated dependencies
+  - @collie-lang/compiler@6.0.1
+  - @collie-lang/webpack@5.0.1
+  - @collie-lang/config@1.0.1
+  - @collie-lang/next@2.0.1
+  - @collie-lang/vite@2.0.1
+
+## 3.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/compiler@6.0.0
+  - @collie-lang/next@2.0.0
+
 ## 2.0.1
 
 ### Patch Changes

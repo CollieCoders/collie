@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
 import type {
@@ -21,7 +20,6 @@ const DEFAULT_CONFIG_FILES = [
   "collie.config.json"
 ] as const;
 
-const requireForCjs = createRequire(import.meta.url);
 type TsImportFn = (
   specifier: string,
   parent: string | { parentURL: string }
@@ -115,11 +113,7 @@ async function loadConfigFile(
     return JSON.parse(contents);
   }
 
-  if (ext === ".cjs") {
-    return requireForCjs(filePath);
-  }
-
-  if (ext === ".js" || ext === ".mjs") {
+  if (ext === ".cjs" || ext === ".js" || ext === ".mjs") {
     const imported = await import(pathToFileURL(filePath).href);
     return imported?.default ?? imported;
   }

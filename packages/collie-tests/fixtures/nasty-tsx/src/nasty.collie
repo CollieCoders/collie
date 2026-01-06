@@ -1,0 +1,15 @@
+#id nasty
+props
+  items: Array<{ id: string; label: string }>
+  showFlag: boolean
+  panelProps: Record<string, unknown>
+  title: string
+
+div.container
+  h1 {title}
+  = <Panel {...panelProps} title={title} />
+  @if (showFlag)
+    span.flag Active
+  ul
+    @for item in items
+      li(key={item.id}) {item.label}

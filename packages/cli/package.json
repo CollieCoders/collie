@@ -1,7 +1,7 @@
 {
   "name": "@collie-lang/cli",
-  "version": "2.0.1",
-  "description": "Collie CLI (init a Vite project with Collie).",
+  "version": "3.0.1",
+  "description": "Collie CLI.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -32,7 +32,10 @@
   },
   "dependencies": {
     "@collie-lang/compiler": "workspace:*",
+    "@collie-lang/config": "workspace:*",
     "@collie-lang/next": "workspace:*",
+    "@collie-lang/vite": "workspace:*",
+    "@collie-lang/webpack": "workspace:*",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",

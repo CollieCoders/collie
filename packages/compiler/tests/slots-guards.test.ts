@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { compile } from "../src/index";
 
+function withId(source: string, id: string): string {
+  return `#id ${id}\n${source}`;
+}
+
 interface SuccessCase {
   name: string;
   source: string;
@@ -26,8 +30,8 @@ Card
       {description}
 `.trim(),
     snippets: [
-      `header={<><h2>{title}</h2></>}`,
-      `body={<><p>{description}</p></>}`
+      `header={<><h2>{props?.title}</h2></>}`,
+      `body={<><p>{props?.description}</p></>}`
     ]
   },
   {
@@ -37,7 +41,7 @@ div?isVisible
   span
     "Hello"
 `.trim(),
-    snippets: [`return (isVisible) && <div`, `{(isVisible) && <div`]
+    snippets: [`return (props?.isVisible) && <div`, `{(props?.isVisible) && <div`]
   },
   {
     name: "nested guards compose correctly",
@@ -47,8 +51,8 @@ div?outerCondition
     "Nested"
 `.trim(),
     snippets: [
-      `(outerCondition) && <div`,
-      `{(innerCondition) && <span`
+      `(props?.outerCondition) && <div`,
+      `{(props?.innerCondition) && <span`
     ]
   },
   {
@@ -60,7 +64,7 @@ Card?showCard
       "Hello"
 `.trim(),
     snippets: [
-      `(showCard) && <Card`,
+      `(props?.showCard) && <Card`,
       `body={<><div className="wrapper">Hello</div></>}`
     ]
   }
@@ -110,8 +114,8 @@ Card
   }
 ];
 
-for (const test of successCases) {
-  const result = compile(test.source);
+successCases.forEach((test, index) => {
+  const result = compile(withId(test.source, `slots.success.${index}`));
   assert.deepEqual(
     result.diagnostics.map((d) => d.code ?? ""),
     [],
@@ -124,10 +128,10 @@ for (const test of successCases) {
     );
   }
   console.log(`✓ ${test.name}`);
-}
+});
 
-for (const test of errorCases) {
-  const result = compile(test.source);
+errorCases.forEach((test, index) => {
+  const result = compile(withId(test.source, `slots.error.${index}`));
   const codes = result.diagnostics.map((d) => d.code ?? "");
   assert.deepEqual(
     codes,
@@ -135,6 +139,6 @@ for (const test of errorCases) {
     `Diagnostics for "${test.name}" did not match.\nExpected: ${test.diagnostics.join(", ")}\nReceived: ${codes.join(", ")}`
   );
   console.log(`✓ ${test.name}`);
-}
+});
 
 console.log(`✅ Ran ${successCases.length + errorCases.length} slot/guard tests.`);

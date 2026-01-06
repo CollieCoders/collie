@@ -1,26 +1,20 @@
 import assert from "node:assert/strict";
-import { compileToHtml } from "../src/index";
+import { compileTemplate, compileToHtml, parseCollie } from "../src/index";
 
-console.log("▶ id directive :: metadata resolution");
+console.log("▶ id directive :: multi-template ids");
 
-const baseTemplate = `
+const missingIdResult = compileToHtml(
+  `
 div.wrapper
   "Hello"
-`.trim();
-
-const fallbackResult = compileToHtml(baseTemplate, { filename: "/components/hero.collie" });
-assert.deepEqual(
-  fallbackResult.diagnostics.map((d) => d.code),
-  [],
-  "fallback identifier compile should not produce diagnostics"
+`.trim(),
+  { filename: "/components/hero.collie" }
 );
-assert.equal(fallbackResult.meta?.id, "hero", "filename-only compile should derive id from basename");
-assert.equal(fallbackResult.meta?.rawId, undefined, "fallback identifier should not expose rawId");
-assert.equal(
-  fallbackResult.meta?.filename,
-  "/components/hero.collie",
-  "meta.filename should echo the provided filename"
+assert.ok(
+  missingIdResult.diagnostics.some((diag) => diag.code === "COLLIE701"),
+  "Missing #id should report an error"
 );
+assert.equal(missingIdResult.meta?.id, undefined, "Missing #id should not set meta.id");
 
 const explicitResult = compileToHtml(
   `
@@ -30,7 +24,7 @@ div.hero
 `.trim(),
   { filename: "/components/hero.collie" }
 );
-assert.equal(explicitResult.meta?.id, "homeHero", "#id homeHero should override filename");
+assert.equal(explicitResult.meta?.id, "homeHero", "#id homeHero should set meta.id");
 assert.equal(explicitResult.meta?.rawId, "homeHero", "#id directive should expose rawId");
 
 const suffixedIdResult = compileToHtml(
@@ -41,18 +35,15 @@ div.hero
 `.trim(),
   { filename: "/components/hero.collie" }
 );
-assert.equal(suffixedIdResult.meta?.id, "homeHero", "#id homeHero-collie should strip the -collie suffix");
+assert.equal(
+  suffixedIdResult.meta?.id,
+  "homeHero-collie",
+  "#id homeHero-collie should retain the full id"
+);
 assert.equal(
   suffixedIdResult.meta?.rawId,
   "homeHero-collie",
   "#id homeHero-collie should retain the original rawId"
-);
-
-const suffixedFilenameResult = compileToHtml(baseTemplate, { filename: "/components/header-collie.collie" });
-assert.equal(
-  suffixedFilenameResult.meta?.id,
-  "header",
-  "header-collie.collie should derive identifier header"
 );
 
 const equalsSyntaxResult = compileToHtml(
@@ -75,69 +66,53 @@ div.hero
 );
 assert.equal(colonSyntaxResult.meta?.id, "homeHero", "#id: homeHero should parse correctly");
 
-const bareIdResult = compileToHtml(
+const invalidIdResult = compileToHtml(
   `
-id homeHero
+#id 9bad
 div.hero
   "Hi"
 `.trim(),
   { filename: "/components/hero.collie" }
 );
-assert.equal(bareIdResult.meta?.id, "homeHero", "id homeHero should match #id behavior");
-assert.equal(bareIdResult.meta?.rawId, "homeHero", "id directive should expose rawId");
+assert.ok(
+  invalidIdResult.diagnostics.some((diag) => diag.code === "COLLIE702"),
+  "Invalid #id values should report an error"
+);
 
-const bareEqualsSyntaxResult = compileToHtml(
+const duplicateIdResult = compileToHtml(
   `
-id = homeHero
+#id hero
 div.hero
   "Hi"
+
+#id hero
+div.hero
+  "Again"
 `.trim(),
   { filename: "/components/hero.collie" }
 );
-assert.equal(bareEqualsSyntaxResult.meta?.id, "homeHero", "id = homeHero should parse correctly");
+assert.ok(
+  duplicateIdResult.diagnostics.some((diag) => diag.code === "COLLIE703"),
+  "Duplicate #id values should report an error"
+);
 
-const bareColonSyntaxResult = compileToHtml(
+const multiTemplateResult = parseCollie(
   `
-id: homeHero
-div.hero
-  "Hi"
-`.trim(),
-  { filename: "/components/hero.collie" }
-);
-assert.equal(bareColonSyntaxResult.meta?.id, "homeHero", "id: homeHero should parse correctly");
+#id one
+div
+  "First"
 
-const bareSuffixedIdResult = compileToHtml(
-  `
-id homeHero-collie
-div.hero
-  "Hi"
-`.trim(),
-  { filename: "/components/hero.collie" }
+#id two
+div
+  "Second"
+`.trim()
 );
-assert.equal(bareSuffixedIdResult.meta?.id, "homeHero", "id homeHero-collie should strip the -collie suffix");
-assert.equal(
-  bareSuffixedIdResult.meta?.rawId,
-  "homeHero-collie",
-  "id homeHero-collie should retain the original rawId"
+assert.equal(multiTemplateResult.templates.length, 2, "Should parse multiple #id blocks into templates");
+
+const renderCompile = compileTemplate(multiTemplateResult.templates[0], { flavor: "tsx" });
+assert.ok(
+  renderCompile.code.includes("export function render"),
+  "compileTemplate should emit an exported render function"
 );
 
-const mixedCaseKeywords = ["id", "Id", "ID", "iD", "#ID", "#Id", "#iD"];
-for (const keyword of mixedCaseKeywords) {
-  const result = compileToHtml(
-    `
-${keyword} heroCase
-div.hero
-  "Hi"
-`.trim(),
-    { filename: "/components/hero.collie" }
-  );
-  assert.deepEqual(
-    result.diagnostics.map((d) => d.code),
-    [],
-    `${keyword} heroCase should not produce diagnostics`
-  );
-  assert.equal(result.meta?.id, "heroCase", `${keyword} heroCase should normalize correctly`);
-  assert.equal(result.meta?.rawId, "heroCase", `${keyword} heroCase should retain the rawId`);
-}
-
-console.log("✅ id directive metadata tests passed.");
+console.log("✅ id directive tests passed.");

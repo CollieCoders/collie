@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { compile } from "../src/index";
 
+function withId(source: string, id: string): string {
+  return `#id ${id}\n${source}`;
+}
+
 interface SuccessCase {
   name: string;
   source: string;
@@ -119,8 +123,8 @@ runSuccessCases();
 runErrorCases();
 
 function runSuccessCases(): void {
-  for (const test of successCases) {
-    const result = compile(test.source);
+  successCases.forEach((test, index) => {
+    const result = compile(withId(test.source, `classes.success.${index}`));
     assert.deepEqual(result.diagnostics.map((d) => d.code ?? ""), [], `Unexpected diagnostics for ${test.name}`);
     for (const snippet of test.snippets ?? []) {
       assert.ok(
@@ -129,12 +133,12 @@ function runSuccessCases(): void {
       );
     }
     console.log(`✓ ${test.name}`);
-  }
+  });
 }
 
 function runErrorCases(): void {
-  for (const test of errorCases) {
-    const result = compile(test.source);
+  errorCases.forEach((test, index) => {
+    const result = compile(withId(test.source, `classes.error.${index}`));
     const codes = result.diagnostics.map((d) => d.code ?? "");
     assert.deepEqual(
       codes,
@@ -142,7 +146,7 @@ function runErrorCases(): void {
       `Diagnostics for "${test.name}" did not match.\nExpected: ${test.diagnostics.join(", ")}\nReceived: ${codes.join(", ")}`
     );
     console.log(`✓ ${test.name}`);
-  }
+  });
 }
 
 console.log(`✅ Ran ${successCases.length + errorCases.length} class alias tests.`);

@@ -1,0 +1,2 @@
+#id suspect-template-infer
+type Route<TPath extends string> = TPath extends `${'/' | './'}${infer Rest}` ? Rest : never;
