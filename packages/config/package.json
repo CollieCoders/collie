@@ -20,17 +20,19 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
-    "tsx": "^4.21.0"
-  },
+  "dependencies": {},
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"(mvp) no lint configured\""
   },
   "devDependencies": {
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2"
   }
 }

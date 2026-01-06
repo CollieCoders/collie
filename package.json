@@ -19,7 +19,9 @@
     "test:integration": "pnpm -C packages/collie-tests test",
     "test:watch": "pnpm -C packages/collie-tests test:watch",
     "relink": "scripts/reset-collie-links.sh",
-    "file-tree": "tree -l 20 -o file-tree.txt --ignore='node_modules/'"
+    "file-tree": "tree -l 20 -o file-tree.txt --ignore='node_modules/'",
+    "local:pack": "node scripts/local-pack.mjs",
+    "local:clean": "rimraf .local-packs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",
