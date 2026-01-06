@@ -27,6 +27,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"(mvp) no lint configured\""
   },
@@ -40,11 +41,13 @@
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",
     "prompts": "^2.4.2",
-    "picocolors": "^1.1.1",
-    "typescript": "^5.7.2"
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/diff": "^5.0.3",
-    "@types/prompts": "^2.4.9"
+    "@types/prompts": "^2.4.9",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
   }
 }
