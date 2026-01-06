@@ -1,5 +1,16 @@
 # @collie-lang/expo
 
+## 4.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+
 ## 3.0.0
 
 ### Major Changes

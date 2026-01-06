@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/next",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Next.js plugin for Collie template language",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -31,8 +31,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@collie-lang/compiler": "workspace:*",
-    "@collie-lang/webpack": "workspace:*"
+    "@collie-lang/compiler": "^8.0.0",
+    "@collie-lang/webpack": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

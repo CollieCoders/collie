@@ -1,5 +1,11 @@
 # @collie-lang/collie-tests
 
+## 3.0.0
+
+### Major Changes
+
+- Parse fix
+
 ## 2.0.0
 
 ### Major Changes

@@ -503,10 +503,10 @@ function parseTemplateBlock(
         continue;
       }
 
-      const field = parsePropsField(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
-      if (field && root.props) {
-        root.props.fields.push(field);
-      }
+      // const field = parsePropsField(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
+      // if (field && root.props) {
+      //   root.props.fields.push(field);
+      // }
       continue;
     }
 
@@ -1542,50 +1542,49 @@ function parseJSXPassthrough(
   };
 }
 
+// function parsePropsField(
+//   line: string,
+//   lineNumber: number,
+//   column: number,
+//   lineOffset: number,
+//   diagnostics: Diagnostic[]
+// ): PropsField | null {
+//   const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)(\??)\s*:\s*(.+)$/);
+//   if (!match) {
+//     pushDiag(
+//       diagnostics,
+//       "COLLIE102",
+//       "Props lines must be in the form `name[:?] Type`.",
+//       lineNumber,
+//       column,
+//       lineOffset,
+//       Math.max(line.length, 1)
+//     );
+//     return null;
+//   }
 
-function parsePropsField(
-  line: string,
-  lineNumber: number,
-  column: number,
-  lineOffset: number,
-  diagnostics: Diagnostic[]
-): PropsField | null {
-  const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)(\??)\s*:\s*(.+)$/);
-  if (!match) {
-    pushDiag(
-      diagnostics,
-      "COLLIE102",
-      "Props lines must be in the form `name[:?] Type`.",
-      lineNumber,
-      column,
-      lineOffset,
-      Math.max(line.length, 1)
-    );
-    return null;
-  }
+//   const [, name, optionalFlag, typePart] = match;
+//   const typeText = typePart.trim();
+//   if (!typeText) {
+//     pushDiag(
+//       diagnostics,
+//       "COLLIE102",
+//       "Props lines must provide a type after the colon.",
+//       lineNumber,
+//       column,
+//       lineOffset,
+//       Math.max(line.length, 1)
+//     );
+//     return null;
+//   }
 
-  const [, name, optionalFlag, typePart] = match;
-  const typeText = typePart.trim();
-  if (!typeText) {
-    pushDiag(
-      diagnostics,
-      "COLLIE102",
-      "Props lines must provide a type after the colon.",
-      lineNumber,
-      column,
-      lineOffset,
-      Math.max(line.length, 1)
-    );
-    return null;
-  }
-
-  return {
-    name,
-    optional: optionalFlag === "?",
-    typeText,
-    span: createSpan(lineNumber, column, Math.max(line.length, 1), lineOffset)
-  };
-}
+//   return {
+//     name,
+//     optional: optionalFlag === "?",
+//     typeText,
+//     span: createSpan(lineNumber, column, Math.max(line.length, 1), lineOffset)
+//   };
+// }
 
 function parseClassAliasLine(
   line: string,

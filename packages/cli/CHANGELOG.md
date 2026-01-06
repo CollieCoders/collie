@@ -1,5 +1,20 @@
 # @collie-lang/cli
 
+## 5.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+  - @collie-lang/webpack@7.0.0
+  - @collie-lang/config@3.0.0
+  - @collie-lang/next@4.0.0
+  - @collie-lang/vite@4.0.0
+
 ## 4.0.0
 
 ### Major Changes

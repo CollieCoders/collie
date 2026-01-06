@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/vite",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Vite plugin for Collie (.collie -> React component).",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/compiler": "workspace:*",
+    "@collie-lang/compiler": "^8.0.0",
     "fast-glob": "^3.3.3"
   },
   "peerDependencies": {

@@ -1,5 +1,11 @@
 # @collie-lang/html-runtime
 
+## 4.0.0
+
+### Major Changes
+
+- Parse fix
+
 ## 3.0.0
 
 ### Major Changes

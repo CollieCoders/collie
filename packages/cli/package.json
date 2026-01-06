@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/cli",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Collie CLI.",
   "license": "MIT",
   "type": "module",
@@ -31,11 +31,11 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/compiler": "workspace:*",
-    "@collie-lang/config": "workspace:*",
-    "@collie-lang/next": "workspace:*",
-    "@collie-lang/vite": "workspace:*",
-    "@collie-lang/webpack": "workspace:*",
+    "@collie-lang/compiler": "^8.0.0",
+    "@collie-lang/config": "^3.0.0",
+    "@collie-lang/next": "^4.0.0",
+    "@collie-lang/vite": "^4.0.0",
+    "@collie-lang/webpack": "^7.0.0",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",

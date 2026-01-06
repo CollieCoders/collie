@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/compiler",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "description": "Collie compiler core (parser + diagnostics + TSX codegen).",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@collie-lang/config": "workspace:*",
+    "@collie-lang/config": "^3.0.0",
     "typescript": "^5.7.2"
   },
   "scripts": {
