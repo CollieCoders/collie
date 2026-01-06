@@ -33,7 +33,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@collie-lang/compiler": "^1.1.1"
+    "@collie-lang/compiler": "^1.1.2"
   },
   "peerDependencies": {
     "metro-react-native-babel-transformer": "*"

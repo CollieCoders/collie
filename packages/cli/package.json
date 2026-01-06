@@ -1,21 +1,20 @@
 {
   "name": "@collie-lang/cli",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Collie CLI.",
   "license": "MIT",
-  "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "collie": "./dist/index.cjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
-  },
-  "bin": {
-    "collie": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -32,8 +31,8 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/compiler": "^1.1.1",
-    "@collie-lang/config": "^1.1.1",
+    "@collie-lang/compiler": "^1.1.2",
+    "@collie-lang/config": "^1.1.2",
     "@collie-lang/next": "^1.1.1",
     "@collie-lang/vite": "^1.1.1",
     "@collie-lang/webpack": "^1.1.1",
