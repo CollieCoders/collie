@@ -16,6 +16,6 @@
     "@collie-lang/compiler": "latest",
     "@collie-lang/vite": "latest",
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.0"
+    "vite": "^7.0.0"
   }
 }

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import fg from "fast-glob";
 import { diffLines } from "diff";
 import pc from "picocolors";
@@ -1090,95 +1091,218 @@ async function patchViteConfig(configPath: string): Promise<"patched" | "already
     return "already-configured";
   }
 
-  let updated = original;
+  try {
+    const result = transformViteConfig(original);
+    if (!result.changed) {
+      return "already-configured";
+    }
+    await fs.writeFile(configPath, result.code, "utf8");
+    return "patched";
+  } catch (error) {
+    // Fall back to manual if AST transformation fails
+    return "manual";
+  }
+}
+
+function transformViteConfig(source: string): { code: string; changed: boolean } {
+  const sourceFile = ts.createSourceFile(
+    "vite.config.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+
+  let needsImport = !source.includes("@collie-lang/vite");
+  let needsPlugin = !/\bcollie\s*\(/.test(source);
   let changed = false;
 
-  if (!hasImport) {
-    updated = injectImport(updated);
-    changed = true;
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
+  const transformer: ts.TransformerFactory<ts.SourceFile> = (context) => {
+    return (rootNode) => {
+      function visit(node: ts.Node): ts.Node {
+        // Handle imports - add collie import after last import
+        if (needsImport && ts.isImportDeclaration(node)) {
+          // We'll add the import after we've processed all nodes
+          return node;
+        }
+
+        // Find defineConfig call and modify plugins array
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "defineConfig" &&
+          node.arguments.length > 0
+        ) {
+          const configArg = node.arguments[0];
+          if (ts.isObjectLiteralExpression(configArg)) {
+            const updatedConfig = updateConfigObject(configArg);
+            if (updatedConfig !== configArg) {
+              changed = true;
+              return ts.factory.updateCallExpression(
+                node,
+                node.expression,
+                node.typeArguments,
+                [updatedConfig]
+              );
+            }
+          }
+        }
+
+        return ts.visitEachChild(node, visit, context);
+      }
+
+      function updateConfigObject(configObj: ts.ObjectLiteralExpression): ts.ObjectLiteralExpression {
+        let pluginsProperty: ts.PropertyAssignment | undefined;
+        const otherProperties: ts.ObjectLiteralElementLike[] = [];
+
+        for (const prop of configObj.properties) {
+          if (
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === "plugins"
+          ) {
+            pluginsProperty = prop;
+          } else {
+            otherProperties.push(prop);
+          }
+        }
+
+        let updatedPluginsArray: ts.ArrayLiteralExpression;
+
+        if (pluginsProperty && ts.isArrayLiteralExpression(pluginsProperty.initializer)) {
+          updatedPluginsArray = ensurePluginOrdering(pluginsProperty.initializer);
+          if (updatedPluginsArray === pluginsProperty.initializer) {
+            // No changes needed
+            return configObj;
+          }
+        } else if (needsPlugin) {
+          // Create plugins array with just collie()
+          updatedPluginsArray = ts.factory.createArrayLiteralExpression(
+            [createCollieCall()],
+            false
+          );
+        } else {
+          return configObj;
+        }
+
+        const updatedPluginsProperty = ts.factory.createPropertyAssignment(
+          "plugins",
+          updatedPluginsArray
+        );
+
+        // Rebuild properties array with updated plugins
+        if (pluginsProperty) {
+          // Replace existing plugins property
+          const allProperties = [...otherProperties, updatedPluginsProperty];
+          return ts.factory.updateObjectLiteralExpression(configObj, allProperties);
+        } else {
+          // Add new plugins property
+          const allProperties = [...otherProperties, updatedPluginsProperty];
+          return ts.factory.updateObjectLiteralExpression(configObj, allProperties);
+        }
+      }
+
+      function ensurePluginOrdering(array: ts.ArrayLiteralExpression): ts.ArrayLiteralExpression {
+        const elements = Array.from(array.elements);
+        let hasReact = false;
+        let hasCollie = false;
+        let reactIndex = -1;
+        let collieIndex = -1;
+
+        // Check what we already have
+        elements.forEach((elem, idx) => {
+          if (ts.isCallExpression(elem) && ts.isIdentifier(elem.expression)) {
+            if (elem.expression.text === "react") {
+              hasReact = true;
+              reactIndex = idx;
+            } else if (elem.expression.text === "collie") {
+              hasCollie = true;
+              collieIndex = idx;
+            }
+          }
+        });
+
+        // Determine if array is multiline by checking if it has more than one element
+        const isMultiLine = elements.length > 1;
+
+        if (hasCollie && !needsPlugin) {
+          // Already has collie, just ensure ordering
+          if (hasReact && reactIndex > collieIndex) {
+            // Wrong order, need to swap
+            const newElements = [...elements];
+            const reactPlugin = newElements[reactIndex];
+            const colliePlugin = newElements[collieIndex];
+            newElements[collieIndex] = reactPlugin;
+            newElements[reactIndex] = colliePlugin;
+            return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
+          }
+          return array; // Order is fine
+        }
+
+        if (!hasCollie && needsPlugin) {
+          // Need to add collie at the end
+          const newElements = [...elements, createCollieCall()];
+          return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
+        }
+
+        return array;
+      }
+
+      function createCollieCall(): ts.CallExpression {
+        return ts.factory.createCallExpression(
+          ts.factory.createIdentifier("collie"),
+          undefined,
+          []
+        );
+      }
+
+      const visited = ts.visitNode(rootNode, visit) as ts.SourceFile;
+
+      // Add import if needed
+      if (needsImport && changed) {
+        const collieImport = ts.factory.createImportDeclaration(
+          undefined,
+          ts.factory.createImportClause(
+            false,
+            ts.factory.createIdentifier("collie"),
+            undefined
+          ),
+          ts.factory.createStringLiteral("@collie-lang/vite", true)
+        );
+
+        // Find last import to insert after
+        let lastImportIndex = -1;
+        for (let i = 0; i < visited.statements.length; i++) {
+          if (ts.isImportDeclaration(visited.statements[i])) {
+            lastImportIndex = i;
+          }
+        }
+
+        const statements = Array.from(visited.statements);
+        if (lastImportIndex >= 0) {
+          statements.splice(lastImportIndex + 1, 0, collieImport);
+        } else {
+          statements.unshift(collieImport);
+        }
+
+        return ts.factory.updateSourceFile(visited, statements);
+      }
+
+      return visited;
+    };
+  };
+
+  const result = ts.transform(sourceFile, [transformer]);
+  const transformedSourceFile = result.transformed[0];
+  result.dispose();
+
+  if (!changed) {
+    return { code: source, changed: false };
   }
 
-  if (!hasPlugin) {
-    const withPlugin = injectColliePlugin(updated);
-    if (!withPlugin) {
-      return "manual";
-    }
-    updated = withPlugin;
-    changed = true;
-  }
-
-  if (changed) {
-    await fs.writeFile(configPath, updated, "utf8");
-    return "patched";
-  }
-
-  return "already-configured";
-}
-
-function injectColliePlugin(source: string): string | null {
-  const pluginPattern = /plugins\s*[:=]\s*\[/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = pluginPattern.exec(source)) !== null) {
-    const bracketIndex = match.index + match[0].length - 1;
-    const updated = insertPluginIntoArray(source, bracketIndex);
-    if (updated) {
-      return updated;
-    }
-  }
-
-  return null;
-}
-
-function insertPluginIntoArray(source: string, bracketStart: number): string | null {
-  const bracketEnd = findMatchingBracket(source, bracketStart);
-  if (bracketEnd === -1) return null;
-
-  const before = source.slice(0, bracketStart + 1);
-  const inside = source.slice(bracketStart + 1, bracketEnd);
-  const after = source.slice(bracketEnd);
-  const trimmedInside = inside.trim();
-
-  const lineStart = source.lastIndexOf("\n", bracketStart);
-  const indentMatch = source.slice(lineStart + 1, bracketStart).match(/^\s*/);
-  const baseIndent = indentMatch ? indentMatch[0] : "";
-  const entryIndent = `${baseIndent}  `;
-
-  if (!trimmedInside) {
-    const insertion = `\n${entryIndent}collie()\n${baseIndent}`;
-    return `${before}${insertion}${after}`;
-  }
-
-  const afterOpenIndex = bracketStart + 1;
-  const rest = source.slice(afterOpenIndex, bracketEnd);
-  const leadingWhitespaceMatch = rest.match(/^\s*/);
-  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : "";
-  const isMultiline = leadingWhitespace.includes("\n");
-  const insertText = isMultiline
-    ? `\n${entryIndent}collie(),`
-    : ` collie(),${needsTrailingSpace(rest) ? " " : ""}`;
-
-  return `${source.slice(0, afterOpenIndex)}${insertText}${source.slice(afterOpenIndex)}`;
-}
-
-function needsTrailingSpace(rest: string): boolean {
-  const trimmed = rest.trimStart();
-  if (!trimmed.length) return false;
-  const nextChar = trimmed[0];
-  return nextChar !== "," && nextChar !== " ";
-}
-
-function findMatchingBracket(text: string, openIndex: number): number {
-  let depth = 0;
-  for (let i = openIndex; i < text.length; i++) {
-    const char = text[i];
-    if (char === "[") depth++;
-    else if (char === "]") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
+  const output = printer.printFile(transformedSourceFile);
+  return { code: output, changed: true };
 }
 
 async function ensureCollieDeclaration(root: string): Promise<void> {
@@ -1208,20 +1332,7 @@ function findViteConfigFile(root: string): string | null {
   return null;
 }
 
-function injectImport(source: string): string {
-  const importStatement = `import collie from "@collie-lang/vite";\n`;
-  const importMatches = [...source.matchAll(/^import.*$/gm)];
-  const insertPos =
-    importMatches.length > 0 ? computeInsertPos(source, importMatches[importMatches.length - 1]) : 0;
-  return source.slice(0, insertPos) + importStatement + source.slice(insertPos);
-}
-
-function computeInsertPos(content: string, match: RegExpMatchArray): number {
-  let pos = (match.index ?? 0) + match[0].length;
-  if (content[pos] === "\r") pos += 1;
-  if (content[pos] === "\n") pos += 1;
-  return pos;
-}
+// Import injection is now handled by transformViteConfig AST transformer
 
 function readCliPackageInfo(): { version: string; dependencies: Record<string, string> } {
   try {
