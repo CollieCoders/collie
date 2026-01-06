@@ -1,5 +1,27 @@
 # @collie-lang/webpack
 
+## 7.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+
+## 6.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@7.0.0
+
 ## 5.0.1
 
 ### Patch Changes

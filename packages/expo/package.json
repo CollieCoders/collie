@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/expo",
-  "version": "2.0.1",
+  "version": "1.1.1",
   "description": "Expo / Metro adapter for Collie templates.",
   "license": "MIT",
   "type": "module",
@@ -32,7 +32,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@collie-lang/compiler": "workspace:*"
+    "@collie-lang/compiler": "^1.1.1"
   },
   "peerDependencies": {
     "metro-react-native-babel-transformer": "*"

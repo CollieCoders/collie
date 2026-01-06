@@ -1,5 +1,27 @@
 # @collie-lang/compiler
 
+## 8.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/config@3.0.0
+
+## 7.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/config@2.0.0
+
 ## 6.0.1
 
 ### Patch Changes
