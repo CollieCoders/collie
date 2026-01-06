@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/next",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Next.js plugin for Collie template language",
   "type": "module",
   "main": "./dist/index.cjs",

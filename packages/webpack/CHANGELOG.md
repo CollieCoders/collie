@@ -1,5 +1,16 @@
 # @collie-lang/webpack
 
+## 6.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@7.0.0
+
 ## 5.0.1
 
 ### Patch Changes

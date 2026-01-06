@@ -1,5 +1,17 @@
 # @collie-lang/storybook
 
+## 3.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/webpack@6.0.0
+  - @collie-lang/vite@3.0.0
+
 ## 2.0.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/vite",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Vite plugin for Collie (.collie -> React component).",
   "license": "MIT",
   "type": "module",

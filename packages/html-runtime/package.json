@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/html-runtime",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "private": false,
   "main": "dist/v1/collie-html-runtime.js",
   "module": "dist/v1/collie-html-runtime.js",

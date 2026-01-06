@@ -1,5 +1,11 @@
 # @collie-lang/html-runtime
 
+## 3.0.0
+
+### Major Changes
+
+- Updated vite
+
 ## 2.0.1
 
 ### Patch Changes
