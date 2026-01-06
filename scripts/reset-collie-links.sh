@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# echo
-# echo "🔨 Building Collie..."
-# pnpm build
+echo
+echo "🔨 Building Collie..."
+pnpm build
 
 echo
 echo "🧹 Cleaning existing global @collie-lang/* npm installs..."
