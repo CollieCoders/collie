@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/storybook",
-  "version": "4.0.0",
+  "version": "1.1.1",
   "description": "Storybook adapter for Collie templates.",
   "license": "MIT",
   "type": "module",
@@ -28,8 +28,8 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/vite": "^4.0.0",
-    "@collie-lang/webpack": "^7.0.0"
+    "@collie-lang/vite": "^1.1.1",
+    "@collie-lang/webpack": "^1.1.1"
   },
   "devDependencies": {
     "@storybook/types": "^8.2.0",
