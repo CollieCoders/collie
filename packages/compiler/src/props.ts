@@ -658,7 +658,6 @@ function collectTemplateUsage(root: RootNode): TemplateUsage {
   };
   
   const env = createTemplateEnv(root.propsDecls);
-  const declaredProps = new Set(root.propsDecls?.map(d => d.name) || []);
   
   function mergeResult(result: any) {
     // Merge usedBare
@@ -666,12 +665,9 @@ function collectTemplateUsage(root: RootNode): TemplateUsage {
       usage.usedBare.add(name);
     }
     
-    // Track which bare identifiers were actually prop aliases (got rewritten)
-    // We can infer this: if it's in declaredProps but NOT in usedBare, it was rewritten
-    // Actually, we need a different approach - the rewriteExpression already rewrites them
-    // So we need to track them before rewriting
-    
-    // Better approach: scan the original expression for identifiers
+    for (const name of result.rewrittenAliases) {
+      usage.usedBareAliases.add(name);
+    }
     for (const name of result.usedPropsDot) {
       usage.usedPropsDot.add(name);
     }
@@ -687,33 +683,12 @@ function collectTemplateUsage(root: RootNode): TemplateUsage {
     if (!expr) return;
     const result = rewriteExpression(expr, env);
     mergeResult(result);
-    
-    // Track bare aliases: these are identifiers that were rewritten
-    // We can detect them by checking which declared props are NOT in usedBare
-    // but also aren't in usedPropsDot
-    for (const name of declaredProps) {
-      if (!result.usedBare.has(name) && !result.usedPropsDot.has(name)) {
-        // This prop alias was used (and rewritten)
-        // We need to scan the original expression to confirm
-        if (containsIdentifier(expr, name)) {
-          usage.usedBareAliases.add(name);
-        }
-      }
-    }
   }
   
   function analyzeJsxExpression(expr: string | undefined) {
     if (!expr) return;
     const result = rewriteJsxExpression(expr, env);
     mergeResult(result);
-    
-    for (const name of declaredProps) {
-      if (!result.usedBare.has(name) && !result.usedPropsDot.has(name)) {
-        if (containsIdentifier(expr, name)) {
-          usage.usedBareAliases.add(name);
-        }
-      }
-    }
   }
   
   function walkNode(node: Node) {
@@ -809,16 +784,6 @@ function collectTemplateUsage(root: RootNode): TemplateUsage {
   }
   
   return usage;
-}
-
-/**
- * Simple check if an expression contains an identifier.
- * This is a heuristic for detecting bare alias usage.
- */
-function containsIdentifier(expr: string, name: string): boolean {
-  // Simple regex-based check
-  const pattern = new RegExp(`\\b${name}\\b`);
-  return pattern.test(expr);
 }
 
 function shouldIgnoreForDiagnostics(name: string): boolean {
