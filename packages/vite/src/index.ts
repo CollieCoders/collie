@@ -243,7 +243,15 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       if (watcher) {
         watcher.addWatchFile(filePath);
       }
-      const source = await fs.readFile(filePath, "utf-8");
+      let source: string;
+      try {
+        source = await fs.readFile(filePath, "utf-8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
       const document = parseCollie(source, { filename: filePath });
       diagnostics.push(...document.diagnostics);
 
