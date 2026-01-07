@@ -49,6 +49,7 @@ interface InitOptions {
 }
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"] as const;
+const VITE_CONFIG_PATTERNS = ["vite.config.ts", "vite.config.js", "vite.config.mjs", "vite.config.cjs"] as const;
 const TAILWIND_CONFIG_FILES = [
   "tailwind.config.js",
   "tailwind.config.cjs",
@@ -607,6 +608,74 @@ function printTemplateDiagnostics(diagnostics: Diagnostic[]): void {
 async function runInit(options: InitOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
   const packageJson = await readProjectPackage(projectRoot);
+  
+  // Check if this is a Vite project
+  const viteConfigPath = findViteConfigPath(projectRoot);
+  if (!viteConfigPath) {
+    printCliError("No Vite config found. collie init currently requires a Vite project.");
+    console.error(pc.dim("Expected one of: vite.config.ts, vite.config.js, vite.config.mjs, vite.config.cjs"));
+    process.exit(1);
+  }
+  
+  // Verify package.json exists
+  if (!packageJson) {
+    printCliError("No package.json found. collie init requires a Node.js project.");
+    process.exit(1);
+  }
+  
+  // Check for missing required Collie packages
+  const missing = computeMissingCollieDeps(packageJson);
+  const hasAnyMissing = missing.missingRuntime.length > 0 || missing.missingDev.length > 0;
+  
+  if (hasAnyMissing) {
+    const packageManager = options.packageManager ?? detectPackageManager(projectRoot);
+    const versionSpec = getCollieVersionSpec(packageJson);
+    
+    // Build package specs with version pinning
+    const runtimeSpecs = missing.missingRuntime.map(pkg => {
+      return versionSpec ? `${pkg}@${versionSpec}` : pkg;
+    });
+    const devSpecs = missing.missingDev.map(pkg => {
+      return versionSpec ? `${pkg}@${versionSpec}` : pkg;
+    });
+    
+    if (options.noInstall) {
+      // Print warning and show what commands to run
+      const allMissing = [...missing.missingRuntime, ...missing.missingDev];
+      console.log(pc.yellow(`⚠ Missing required Collie packages: ${allMissing.join(", ")}`));
+      console.log(pc.dim("\nTo install, run:"));
+      
+      if (runtimeSpecs.length > 0) {
+        const cmd = packageManager === "npm"
+          ? `npm i ${runtimeSpecs.join(" ")}`
+          : packageManager === "pnpm"
+            ? `pnpm add ${runtimeSpecs.join(" ")}`
+            : `yarn add ${runtimeSpecs.join(" ")}`;
+        console.log(pc.dim(`  ${cmd}`));
+      }
+      
+      if (devSpecs.length > 0) {
+        const cmd = packageManager === "npm"
+          ? `npm i -D ${devSpecs.join(" ")}`
+          : packageManager === "pnpm"
+            ? `pnpm add -D ${devSpecs.join(" ")}`
+            : `yarn add -D ${devSpecs.join(" ")}`;
+        console.log(pc.dim(`  ${cmd}`));
+      }
+      
+      console.log("");
+    } else {
+      // Install missing packages
+      const totalMissing = missing.missingRuntime.length + missing.missingDev.length;
+      console.log(pc.cyan(`Installing ${totalMissing} missing Collie package${totalMissing === 1 ? "" : "s"}...`));
+      
+      await installPackages(packageManager, runtimeSpecs, devSpecs, projectRoot);
+      
+      console.log(pc.green(`✔ Installed ${totalMissing} package${totalMissing === 1 ? "" : "s"}.`));
+      console.log("");
+    }
+  }
+  
   const detectedFramework = packageJson ? detectFrameworkFromPackage(packageJson) : null;
   const cssDetection = await detectCssStrategy(projectRoot, packageJson);
 
@@ -655,9 +724,7 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   }
 
   let viteConfigStatus: "patched" | "already-configured" | "manual" | "not-found" | "skipped" = "skipped";
-  let viteConfigPath: string | null = null;
   if (framework === "vite") {
-    viteConfigPath = findViteConfigFile(projectRoot);
     if (viteConfigPath) {
       viteConfigStatus = await patchViteConfig(viteConfigPath);
     } else {
@@ -1309,6 +1376,106 @@ function findViteConfigFile(root: string): string | null {
     }
   }
   return null;
+}
+
+function findViteConfigPath(projectRoot: string): string | null {
+  for (const filename of VITE_CONFIG_PATTERNS) {
+    const candidate = path.join(projectRoot, filename);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function getCollieVersionSpec(packageJson: Record<string, any> | null): string | null {
+  if (!packageJson) return null;
+  
+  const cliSpec = 
+    packageJson.dependencies?.["@collie-lang/cli"] ||
+    packageJson.devDependencies?.["@collie-lang/cli"];
+  
+  if (!cliSpec) return null;
+  
+  // Handle workspace: or file: protocols - skip them
+  if (cliSpec.startsWith("workspace:") || cliSpec.startsWith("file:")) {
+    return null;
+  }
+  
+  return cliSpec;
+}
+
+interface MissingCollieDeps {
+  missingRuntime: string[];
+  missingDev: string[];
+}
+
+function computeMissingCollieDeps(packageJson: Record<string, any> | null): MissingCollieDeps {
+  const missingRuntime: string[] = [];
+  const missingDev: string[] = [];
+  
+  if (!packageJson) {
+    return { missingRuntime, missingDev };
+  }
+  
+  const deps = packageJson.dependencies || {};
+  const devDeps = packageJson.devDependencies || {};
+  
+  // Check @collie-lang/react - MUST be in dependencies (not devDependencies)
+  const reactInDeps = "@collie-lang/react" in deps;
+  const reactInDevDeps = "@collie-lang/react" in devDeps;
+  
+  if (!reactInDeps) {
+    missingRuntime.push("@collie-lang/react");
+  }
+  // If it's in devDependencies, we still treat it as missing from the correct bucket
+  
+  // Check dev dependencies (can be in either deps or devDeps, but prefer devDeps)
+  const requiredDevPackages = [
+    "@collie-lang/vite",
+    "@collie-lang/compiler",
+    "@collie-lang/config"
+  ];
+  
+  for (const pkg of requiredDevPackages) {
+    const inDeps = pkg in deps;
+    const inDevDeps = pkg in devDeps;
+    
+    if (!inDeps && !inDevDeps) {
+      missingDev.push(pkg);
+    }
+  }
+  
+  return { missingRuntime, missingDev };
+}
+
+async function installPackages(
+  packageManager: PackageManager,
+  runtimePkgs: string[],
+  devPkgs: string[],
+  cwd: string
+): Promise<void> {
+  // Install runtime dependencies
+  if (runtimePkgs.length > 0) {
+    const args: string[] = packageManager === "npm" 
+      ? ["install", ...runtimePkgs]
+      : packageManager === "pnpm"
+        ? ["add", ...runtimePkgs]
+        : ["add", ...runtimePkgs]; // yarn
+    
+    await runCommand(packageManager, args, cwd);
+  }
+  
+  // Install dev dependencies
+  if (devPkgs.length > 0) {
+    const args: string[] = packageManager === "npm"
+      ? ["install", "-D", ...devPkgs]
+      : packageManager === "pnpm"
+        ? ["add", "-D", ...devPkgs]
+        : ["add", "-D", ...devPkgs]; // yarn
+    
+    await runCommand(packageManager, args, cwd);
+  }
 }
 
 // Import injection is now handled by transformViteConfig AST transformer
