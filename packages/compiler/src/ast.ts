@@ -10,10 +10,19 @@ export interface ClassAliasesDecl {
   aliases: ClassAliasDecl[];
 }
 
+export type PropDeclKind = "value" | "callable";
+
+export interface PropDecl {
+  name: string;
+  kind: PropDeclKind;  // "callable" when declared as name()
+  span?: SourceSpan;   // span for the decl (at least name)
+}
+
 export interface RootNode {
   type: "Root";
   children: Node[];
   props?: PropsDecl;
+  propsDecls?: PropDecl[];
   classAliases?: ClassAliasesDecl;
   clientComponent?: boolean;
   id?: string;
