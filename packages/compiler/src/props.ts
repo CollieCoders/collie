@@ -11,6 +11,7 @@ import type {
 } from "./ast.ts";
 import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics.ts";
 import type { CollieDiagnosticLevel, NormalizedCollieDialectPropsOptions } from "@collie-lang/config";
+import { createTemplateEnv, rewriteExpression, rewriteJsxExpression } from "./rewrite.ts";
 
 interface UsageOccurrence {
   name: string;
@@ -557,4 +558,269 @@ function offsetSpan(base: SourceSpan, index: number, length: number): SourceSpan
       offset: startOffset + length
     }
   };
+}
+
+/**
+ * Enforce #props diagnostics for the new prop aliases feature.
+ * Only runs when root.propsDecls exists.
+ */
+export function enforcePropAliases(root: RootNode): Diagnostic[] {
+  // Only run diagnostics if #props block exists
+  if (!root.propsDecls || root.propsDecls.length === 0) {
+    return [];
+  }
+
+  const diagnostics: Diagnostic[] = [];
+  const declaredProps = new Map(root.propsDecls.map(d => [d.name, d]));
+  
+  // Collect all usage metadata from expressions throughout the template
+  const allUsage = collectTemplateUsage(root);
+  
+  // D1: Bare identifier used but not declared
+  for (const name of allUsage.usedBare) {
+    if (!declaredProps.has(name) && !shouldIgnoreForDiagnostics(name)) {
+      diagnostics.push({
+        severity: "warning",
+        code: "props.missingDeclaration",
+        message: `Identifier "${name}" is used without "props." but is not declared in #props. Declare "${name}" in #props or use "props.${name}".`
+      });
+    }
+  }
+  
+  // D2: Declared but unused
+  for (const [name, decl] of declaredProps) {
+    const usedAsBare = allUsage.usedBareAliases.has(name);
+    const usedAsProps = allUsage.usedPropsDot.has(name);
+    
+    if (!usedAsBare && !usedAsProps) {
+      diagnostics.push({
+        severity: "warning",
+        code: "props.unusedDeclaration",
+        message: `Prop "${name}" is declared in #props but never used in this template.`,
+        span: decl.span
+      });
+    }
+  }
+  
+  // D3: Declared but used as props.subtitle (unnecessary)
+  for (const name of allUsage.usedPropsDot) {
+    if (declaredProps.has(name)) {
+      diagnostics.push({
+        severity: "warning",
+        code: "props.style.nonPreferred",
+        message: `"props.${name}" is unnecessary because "${name}" is declared in #props. Use "{${name}}" instead.`
+      });
+    }
+  }
+  
+  // D4: Callable cue mismatch
+  for (const [name, decl] of declaredProps) {
+    const isCallable = decl.kind === "callable";
+    const usedAsCall = allUsage.callSitesBare.has(name);
+    const usedAsValue = allUsage.usedBareAliases.has(name) && !usedAsCall;
+    
+    if (isCallable && usedAsValue) {
+      diagnostics.push({
+        severity: "warning",
+        code: "props.style.nonPreferred",
+        message: `"${name}" is declared as callable in #props (${name}()) but used as a value.`
+      });
+    } else if (!isCallable && usedAsCall) {
+      diagnostics.push({
+        severity: "warning",
+        code: "props.style.nonPreferred",
+        message: `"${name}" is declared as a value in #props but used as a function call.`
+      });
+    }
+  }
+  
+  return diagnostics;
+}
+
+/**
+ * Aggregate usage metadata from all expressions in the template.
+ */
+interface TemplateUsage {
+  usedBare: Set<string>;           // All bare identifiers (not prop aliases)
+  usedBareAliases: Set<string>;    // Bare identifiers that ARE prop aliases (were rewritten)
+  usedPropsDot: Set<string>;       // props.<name> usage
+  callSitesBare: Set<string>;      // Bare identifiers used as calls
+  callSitesPropsDot: Set<string>;  // props.<name> used as calls
+}
+
+function collectTemplateUsage(root: RootNode): TemplateUsage {
+  const usage: TemplateUsage = {
+    usedBare: new Set(),
+    usedBareAliases: new Set(),
+    usedPropsDot: new Set(),
+    callSitesBare: new Set(),
+    callSitesPropsDot: new Set()
+  };
+  
+  const env = createTemplateEnv(root.propsDecls);
+  const declaredProps = new Set(root.propsDecls?.map(d => d.name) || []);
+  
+  function mergeResult(result: any) {
+    // Merge usedBare
+    for (const name of result.usedBare) {
+      usage.usedBare.add(name);
+    }
+    
+    // Track which bare identifiers were actually prop aliases (got rewritten)
+    // We can infer this: if it's in declaredProps but NOT in usedBare, it was rewritten
+    // Actually, we need a different approach - the rewriteExpression already rewrites them
+    // So we need to track them before rewriting
+    
+    // Better approach: scan the original expression for identifiers
+    for (const name of result.usedPropsDot) {
+      usage.usedPropsDot.add(name);
+    }
+    for (const name of result.callSitesBare) {
+      usage.callSitesBare.add(name);
+    }
+    for (const name of result.callSitesPropsDot) {
+      usage.callSitesPropsDot.add(name);
+    }
+  }
+  
+  function analyzeExpression(expr: string | undefined) {
+    if (!expr) return;
+    const result = rewriteExpression(expr, env);
+    mergeResult(result);
+    
+    // Track bare aliases: these are identifiers that were rewritten
+    // We can detect them by checking which declared props are NOT in usedBare
+    // but also aren't in usedPropsDot
+    for (const name of declaredProps) {
+      if (!result.usedBare.has(name) && !result.usedPropsDot.has(name)) {
+        // This prop alias was used (and rewritten)
+        // We need to scan the original expression to confirm
+        if (containsIdentifier(expr, name)) {
+          usage.usedBareAliases.add(name);
+        }
+      }
+    }
+  }
+  
+  function analyzeJsxExpression(expr: string | undefined) {
+    if (!expr) return;
+    const result = rewriteJsxExpression(expr, env);
+    mergeResult(result);
+    
+    for (const name of declaredProps) {
+      if (!result.usedBare.has(name) && !result.usedPropsDot.has(name)) {
+        if (containsIdentifier(expr, name)) {
+          usage.usedBareAliases.add(name);
+        }
+      }
+    }
+  }
+  
+  function walkNode(node: Node) {
+    switch (node.type) {
+      case "Text":
+        for (const part of node.parts) {
+          if (part.type === "expr") {
+            analyzeExpression(part.value);
+          }
+        }
+        break;
+      
+      case "Expression":
+        analyzeExpression(node.value);
+        break;
+      
+      case "JSXPassthrough":
+        analyzeJsxExpression(node.expression);
+        break;
+      
+      case "Element":
+        if (node.guard) {
+          analyzeExpression(node.guard);
+        }
+        for (const attr of node.attributes) {
+          if (attr.value) {
+            analyzeAttributeValue(attr.value);
+          }
+        }
+        for (const child of node.children) {
+          walkNode(child);
+        }
+        break;
+      
+      case "Component":
+        if (node.guard) {
+          analyzeExpression(node.guard);
+        }
+        for (const attr of node.attributes) {
+          if (attr.value) {
+            analyzeAttributeValue(attr.value);
+          }
+        }
+        if (node.slots) {
+          for (const slot of node.slots) {
+            for (const child of slot.children) {
+              walkNode(child);
+            }
+          }
+        }
+        for (const child of node.children) {
+          walkNode(child);
+        }
+        break;
+      
+      case "Conditional":
+        for (const branch of node.branches) {
+          if (branch.test) {
+            analyzeExpression(branch.test);
+          }
+          for (const child of branch.body) {
+            walkNode(child);
+          }
+        }
+        break;
+      
+      case "For":
+        analyzeExpression(node.arrayExpr);
+        // Note: node.itemName is a local, it shadows props
+        for (const child of node.body) {
+          walkNode(child);
+        }
+        break;
+    }
+  }
+  
+  function analyzeAttributeValue(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+      return; // String literal
+    }
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      const inner = trimmed.slice(1, -1);
+      analyzeExpression(inner);
+    } else {
+      analyzeExpression(trimmed);
+    }
+  }
+  
+  // Walk the entire tree
+  for (const child of root.children) {
+    walkNode(child);
+  }
+  
+  return usage;
+}
+
+/**
+ * Simple check if an expression contains an identifier.
+ * This is a heuristic for detecting bare alias usage.
+ */
+function containsIdentifier(expr: string, name: string): boolean {
+  // Simple regex-based check
+  const pattern = new RegExp(`\\b${name}\\b`);
+  return pattern.test(expr);
+}
+
+function shouldIgnoreForDiagnostics(name: string): boolean {
+  return IGNORED_IDENTIFIERS.has(name) || RESERVED_KEYWORDS.has(name);
 }
