@@ -105,8 +105,6 @@ Additional packages may be added in the future as Collie grows (language server,
 ## ✅ Supported Frameworks
 
 - **Vite** via `@collie-lang/vite` (registry workflow)
-- **Next.js** via `@collie-lang/next` (legacy integration; registry support pending)
-- Webpack-based environments are legacy-only for now; registry integration is pending.
 
 ---
 
@@ -117,9 +115,6 @@ Additional packages may be added in the future as Collie grows (language server,
 ```bash
 # Existing Vite project
 pnpm dlx @collie-lang/cli init --vite
-
-# Scaffold a brand new Next.js project with Collie support
-pnpm dlx @collie-lang/cli init --nextjs my-collie-next-app
 ```
 
 ### Manual Setup — Vite
@@ -170,29 +165,6 @@ export default function App() {
 
 Templates are discovered automatically by `@collie-lang/vite`.
 
-### Manual Setup — Next.js
-
-1. Install the Next.js plugin (legacy integration):
-
-```bash
-pnpm add -D @collie-lang/next @collie-lang/webpack
-```
-
-2. Wrap your Next.js config:
-
-```js
-// next.config.js
-const { withCollie } = require('@collie-lang/next');
-
-module.exports = withCollie({
-  reactStrictMode: true,
-});
-```
-
-3. Registry-based usage in Next.js is not yet supported. Prefer Vite for the new `<Collie id="...">` workflow.
-
----
-
 ## 🛠️ Core Technologies
 
 ### **Compiler (`@collie-lang/compiler`)**
@@ -235,7 +207,6 @@ TODO: Add links once documentation is live (`collie-lang.org/cli`).
 ## 🧪 Examples
 
 - [`examples/vite-react-ts`](examples/vite-react-ts) – starter Vite + React + TS project
-- [`examples/nextjs-app-router`](examples/nextjs-app-router) – fully configured Next.js 14 App Router project that consumes Collie components
 
 Additional guides live under [`docs/`](docs), including a [framework migration guide](docs/migration.md).
 

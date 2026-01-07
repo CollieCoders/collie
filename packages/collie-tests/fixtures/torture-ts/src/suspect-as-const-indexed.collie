@@ -1,3 +1,0 @@
-#id suspect-as-const-indexed
-const palette = ['red', 'blue', 'green'] as const;
-const firstColor = typeof palette[number];

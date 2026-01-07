@@ -22,10 +22,9 @@ interface DoctorContext {
   packageJson: Record<string, any> | null;
 }
 
-type BuildSystem = "vite" | "nextjs" | null;
+type BuildSystem = "vite" | null;
 
 const VITE_CONFIG_FILES = ["vite.config.ts", "vite.config.js", "vite.config.mts", "vite.config.mjs"];
-const NEXT_CONFIG_FILES = ["next.config.ts", "next.config.mjs", "next.config.js"];
 const DECLARATION_CANDIDATES = ["src/collie.d.ts", "app/collie.d.ts", "collie.d.ts"];
 
 export interface DoctorOptions {
@@ -54,12 +53,6 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<Diagnostic
       results.push(viteDependency);
     }
     results.push(await checkViteConfig(context));
-  } else if (buildInfo.type === "nextjs") {
-    const nextDependency = checkDependency(context, "@collie-lang/next", "Collie Next.js integration", ["nextjs"]);
-    if (nextDependency) {
-      results.push(nextDependency);
-    }
-    results.push(await checkNextConfig(context));
   }
 
   results.push(await checkTypeDeclarations(context));
@@ -182,20 +175,7 @@ function detectBuildSystem(context: DoctorContext): { result: DiagnosticResult; 
   }
 
   const hasVite = hasDependency(context.packageJson, "vite");
-  const hasNext = hasDependency(context.packageJson, "next");
 
-  if (hasVite && hasNext) {
-    return {
-      type: "vite",
-      result: {
-        id: "build-system",
-        check: "Build system",
-        status: "warn",
-        message: "Both Vite and Next.js detected (defaulting to Vite)",
-        tags: ["build"]
-      }
-    };
-  }
   if (hasVite) {
     return {
       type: "vite",
@@ -208,26 +188,14 @@ function detectBuildSystem(context: DoctorContext): { result: DiagnosticResult; 
       }
     };
   }
-  if (hasNext) {
-    return {
-      type: "nextjs",
-      result: {
-        id: "build-system",
-        check: "Build system",
-        status: "pass",
-        message: "Next.js detected",
-        tags: ["build", "nextjs"]
-      }
-    };
-  }
   return {
     type: null,
     result: {
       id: "build-system",
       check: "Build system",
       status: "warn",
-      message: "No Vite or Next.js dependency found",
-      fix: "Install Vite or Next.js for the best Collie experience.",
+      message: "No Vite dependency found",
+      fix: "Install Vite for the best Collie experience.",
       tags: ["build"]
     }
   };
@@ -293,40 +261,6 @@ async function checkViteConfig(context: DoctorContext): Promise<DiagnosticResult
     message: "Vite config not found",
     fix: "Create vite.config.ts and add the Collie plugin.",
     tags: ["vite", "config"]
-  };
-}
-
-async function checkNextConfig(context: DoctorContext): Promise<DiagnosticResult> {
-  for (const filename of NEXT_CONFIG_FILES) {
-    const configPath = path.join(context.cwd, filename);
-    if (!existsSync(configPath)) continue;
-    const contents = await fs.readFile(configPath, "utf8");
-    const hasLoader = /@collie-lang\/next/.test(contents) || /withCollie\s*\(/.test(contents);
-    if (hasLoader) {
-      return {
-        id: "next-config",
-        check: "Next.js config",
-        status: "pass",
-        message: `Collie loader configured in ${filename}`,
-        tags: ["nextjs", "config"]
-      };
-    }
-    return {
-      id: "next-config",
-      check: "Next.js config",
-      status: "fail",
-      message: `Found ${filename} but Collie loader not configured`,
-      fix: "Wrap your Next.js config with withCollie() or run collie init --nextjs.",
-      tags: ["nextjs", "config"]
-    };
-  }
-  return {
-    id: "next-config",
-    check: "Next.js config",
-    status: "fail",
-    message: "Next.js config not found",
-    fix: "Create next.config.js and configure withCollie().",
-    tags: ["nextjs", "config"]
   };
 }
 

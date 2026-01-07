@@ -133,11 +133,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
 // Categorize packages by typical usage
 const buildTimePackages = [
   '@collie-lang/vite',
-  '@collie-lang/webpack',
-  '@collie-lang/next',
-  '@collie-lang/cli',
-  '@collie-lang/storybook',
-  '@collie-lang/expo'
+  '@collie-lang/cli'
 ];
 
 const runtimePackages = [

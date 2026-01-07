@@ -28,14 +28,6 @@ const TEMPLATE_MAP: Record<string, TemplateMeta> = {
       ts: "vite-react-ts",
       js: "vite-react-js"
     }
-  },
-  "nextjs-app-router": {
-    label: "Next.js App Router",
-    description: "Next.js 14 App Router starter wired with @collie-lang/next",
-    variants: {
-      ts: "nextjs-app-router-ts",
-      js: "nextjs-app-router-js"
-    }
   }
 };
 
@@ -50,11 +42,7 @@ interface ResolvedOptions {
   noGit: boolean;
 }
 
-const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {
-  next: { template: "nextjs-app-router" },
-  nextjs: { template: "nextjs-app-router", forcedTypescript: true },
-  "nextjs-app": { template: "nextjs-app-router", forcedTypescript: true }
-};
+const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {};
 
 export function formatTemplateList(): string {
   return Object.entries(TEMPLATE_MAP)

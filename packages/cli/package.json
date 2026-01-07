@@ -31,9 +31,7 @@
   "dependencies": {
     "@collie-lang/compiler": "^1.2.0",
     "@collie-lang/config": "^1.2.0",
-    "@collie-lang/next": "^1.2.0",
     "@collie-lang/vite": "^1.2.0",
-    "@collie-lang/webpack": "^1.2.0",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",
