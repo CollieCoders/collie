@@ -1,7 +1,7 @@
 /// <reference path="./virtual.d.ts" />
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { CollieRegistry, CollieTemplateModule } from "./registry";
+import type { CollieRegistry, CollieTemplateModule } from "./registry.d.ts";
 import { registry } from "virtual:collie/registry";
 
 type RenderFn = (props: any) => any;

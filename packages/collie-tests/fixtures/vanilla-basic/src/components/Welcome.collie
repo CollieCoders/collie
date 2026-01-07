@@ -1,9 +1,0 @@
-#id Welcome
-props
-  name: string
-
-div.welcome-card
-  h1 Hello, {name}! 👋
-  p You are ready to build with Collie + React.
-  button.primary(onClick={() => alert("Happy hacking!")})
-    Let's go
