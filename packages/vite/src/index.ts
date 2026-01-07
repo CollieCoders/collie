@@ -390,25 +390,36 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
     resolveId(id, importer) {
       const cleanId = stripQuery(id);
+
       if (cleanId === VIRTUAL_REGISTRY_ID) {
         return VIRTUAL_REGISTRY_RESOLVED;
       }
+
       if (cleanId === VIRTUAL_IDS_ID) {
         return VIRTUAL_IDS_RESOLVED;
       }
+
       if (cleanId === VIRTUAL_REGISTRY_RESOLVED) {
         return cleanId;
       }
+
       if (cleanId === VIRTUAL_IDS_RESOLVED) {
         return cleanId;
       }
+
       if (cleanId.startsWith(VIRTUAL_TEMPLATE_PREFIX)) {
         return VIRTUAL_TEMPLATE_RESOLVED_PREFIX + cleanId.slice(VIRTUAL_TEMPLATE_PREFIX.length);
       }
+
       if (cleanId.startsWith(VIRTUAL_TEMPLATE_RESOLVED_PREFIX)) {
         return cleanId;
       }
-      if (!isVirtualCollieId(cleanId) && cleanId.endsWith(".collie")) {
+
+      const isInternalImporter =
+        typeof importer === "string" &&
+        (importer.startsWith("\0collie:") || importer.startsWith("collie:"));
+
+      if (!isVirtualCollieId(cleanId) && cleanId.endsWith(".collie") && !isInternalImporter) {
         this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
       }
       return null;
@@ -416,23 +427,27 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
     async load(id) {
       const cleanId = stripQuery(id);
+
       if (cleanId === VIRTUAL_REGISTRY_RESOLVED) {
         try {
           await ensureTemplates(this);
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           this.error(err);
+          return null; // <-- TS: stop control-flow here
         }
 
         const entries = Array.from(templatesById.values()).sort((a, b) =>
           a.id.localeCompare(b.id)
         );
+
         const lines = entries.map(
           (record) =>
             `  ${JSON.stringify(record.id)}: () => import(${JSON.stringify(
               `${VIRTUAL_TEMPLATE_PREFIX}${record.encodedId}`
             )}),`
         );
+
         return {
           code: [
             "/** @type {Record<string, () => Promise<{ render: (props: any) => any }>>} */",
@@ -448,6 +463,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           this.error(err);
+          return null; // <-- TS: stop control-flow here
         }
 
         const ids = Array.from(templatesById.keys()).sort((a, b) => a.localeCompare(b));
@@ -462,14 +478,17 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
       if (cleanId.startsWith(VIRTUAL_TEMPLATE_RESOLVED_PREFIX)) {
         const encoded = cleanId.slice(VIRTUAL_TEMPLATE_RESOLVED_PREFIX.length);
+
         try {
           await ensureTemplates(this);
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           this.error(err);
+          return null; // <-- TS: stop control-flow here
         }
 
         const record = templatesByEncodedId.get(encoded);
+
         if (!record) {
           let decoded = encoded;
           try {
@@ -478,6 +497,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
             // Keep encoded value for the error message.
           }
           this.error(new Error(`[collie] Unknown template id "${decoded}".`));
+          return null; // <-- ✅ THIS is what fixes "'record' is possibly 'undefined'"
         }
 
         const result = compileTemplate(record.template, {
@@ -492,6 +512,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
             .map((diag) => formatDiagnostic(record.filePath, diag, resolvedConfig?.root))
             .join("\n");
           this.error(new Error(`[collie]\n${formatted}`));
+          return null; // <-- TS: stop control-flow here
         }
 
         const transformed = await transformWithEsbuild(result.code, record.filePath, {
@@ -505,10 +526,21 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
           map: transformed.map ?? null
         };
       }
+
       if (isCollieFile(cleanId)) {
         const info = this.getModuleInfo(cleanId);
         const importer = info?.importers?.[0];
-        this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
+
+        const isInternalImporter =
+          typeof importer === "string" &&
+          (importer.startsWith("\0collie:") || importer.startsWith("collie:"));
+
+        if (!isInternalImporter) {
+          this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
+          return null; // <-- TS: stop control-flow here
+        }
+
+        return null;
       }
 
       return null;
