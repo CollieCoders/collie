@@ -1,5 +1,11 @@
 # @collie-lang/react
 
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
 ## 2.0.0
 
 ### Major Changes

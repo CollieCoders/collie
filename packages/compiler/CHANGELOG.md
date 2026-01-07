@@ -1,5 +1,16 @@
 # @collie-lang/compiler
 
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/config@1.2.0
+
 ## 8.0.0
 
 ### Major Changes

@@ -1,5 +1,20 @@
 # @collie-lang/cli
 
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@1.2.0
+  - @collie-lang/webpack@1.2.0
+  - @collie-lang/config@1.2.0
+  - @collie-lang/next@1.2.0
+  - @collie-lang/vite@1.2.0
+
 ## 5.0.0
 
 ### Major Changes

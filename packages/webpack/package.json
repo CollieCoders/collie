@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/webpack",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Webpack loader for Collie template language",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -33,7 +33,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@collie-lang/compiler": "^1.1.2"
+    "@collie-lang/compiler": "^1.2.0"
   },
   "devDependencies": {
     "@types/webpack": "^5.28.5",

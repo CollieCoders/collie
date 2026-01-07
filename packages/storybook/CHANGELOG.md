@@ -1,5 +1,17 @@
 # @collie-lang/storybook
 
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/webpack@1.2.0
+  - @collie-lang/vite@1.2.0
+
 ## 4.0.0
 
 ### Major Changes
