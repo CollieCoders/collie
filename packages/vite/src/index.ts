@@ -271,7 +271,10 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     const errors = diagnostics.filter((diag) => diag.severity === "error");
     if (errors.length) {
       const formatted = errors
-        .map((diag) => formatDiagnostic(root, diag, root))
+        .map((diag) => {
+          const fileForDiag = diag.filePath ?? diag.file ?? root;
+          return formatDiagnostic(fileForDiag, diag, root);
+        })
         .join("\n");
       throw new Error(`[collie]\n${formatted}`);
     }
