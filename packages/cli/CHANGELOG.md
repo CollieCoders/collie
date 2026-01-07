@@ -1,0 +1,124 @@
+# @collie-lang/cli
+
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@1.2.0
+  - @collie-lang/webpack@1.2.0
+  - @collie-lang/config@1.2.0
+  - @collie-lang/next@1.2.0
+  - @collie-lang/vite@1.2.0
+
+## 5.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+  - @collie-lang/webpack@7.0.0
+  - @collie-lang/config@3.0.0
+  - @collie-lang/next@4.0.0
+  - @collie-lang/vite@4.0.0
+
+## 4.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@7.0.0
+  - @collie-lang/webpack@6.0.0
+  - @collie-lang/config@2.0.0
+  - @collie-lang/next@3.0.0
+  - @collie-lang/vite@3.0.0
+
+## 3.0.1
+
+### Patch Changes
+
+- Version 5
+- Updated dependencies
+  - @collie-lang/compiler@6.0.1
+  - @collie-lang/webpack@5.0.1
+  - @collie-lang/config@1.0.1
+  - @collie-lang/next@2.0.1
+  - @collie-lang/vite@2.0.1
+
+## 3.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/compiler@6.0.0
+  - @collie-lang/next@2.0.0
+
+## 2.0.1
+
+### Patch Changes
+
+- b964e53: Deploying fixes
+- Updated dependencies [b964e53]
+  - @collie-lang/compiler@4.0.0
+  - @collie-lang/next@1.0.3
+
+## 2.0.0
+
+### Major Changes
+
+- 2c8979d: Test 2.1.1
+
+### Patch Changes
+
+- Updated dependencies [2c8979d]
+  - @collie-lang/compiler@3.0.0
+  - @collie-lang/next@1.0.2
+
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [4111aa0]
+  - @collie-lang/compiler@2.0.0
+  - @collie-lang/next@1.0.1
+
+## 1.0.0
+
+### Major Changes
+
+- b3dd5bc: Publishing
+
+### Minor Changes
+
+- 6345e6d: Add Next.js support to Collie
+
+  This release introduces:
+
+  - `@collie-lang/webpack` – framework-agnostic webpack loader for `.collie` files
+  - `@collie-lang/next` – Next.js plugin that wires the loader into webpack automatically
+  - CLI improvements so `collie init` can scaffold Next.js projects via `--nextjs`
+
+  Documentation now covers supported frameworks, a migration guide, and a full Next.js example project. Integration and unit tests cover the new loader/plugin behavior.
+
+### Patch Changes
+
+- Updated dependencies [b3dd5bc]
+- Updated dependencies [6345e6d]
+  - @collie-lang/compiler@1.0.0
+  - @collie-lang/next@1.0.0

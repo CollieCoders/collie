@@ -1,4 +1,4 @@
-import type { SourceSpan } from "./diagnostics";
+import type { SourceSpan } from "./diagnostics.ts";
 
 export interface ClassAliasDecl {
   name: string;
@@ -15,6 +15,11 @@ export interface RootNode {
   children: Node[];
   props?: PropsDecl;
   classAliases?: ClassAliasesDecl;
+  clientComponent?: boolean;
+  id?: string;
+  rawId?: string;
+  idToken?: string;
+  idTokenSpan?: SourceSpan;
 }
 
 export type Node = ElementNode | TextNode | ExpressionNode | ConditionalNode | ForNode | ComponentNode | JSXPassthroughNode;
@@ -31,6 +36,8 @@ export interface ElementNode {
   classSpans?: SourceSpan[];
   attributes: Attribute[];
   children: Node[];
+  guard?: string;
+  guardSpan?: SourceSpan;
 }
 
 export interface ComponentNode {
@@ -38,6 +45,9 @@ export interface ComponentNode {
   name: string;
   attributes: Attribute[];
   children: Node[];
+  slots?: SlotBlock[];
+  guard?: string;
+  guardSpan?: SourceSpan;
 }
 
 export interface ForNode {
@@ -45,11 +55,15 @@ export interface ForNode {
   itemName: string;
   arrayExpr: string;
   body: Node[];
+  token?: string;
+  tokenSpan?: SourceSpan;
+  arrayExprSpan?: SourceSpan;
 }
 
 export interface JSXPassthroughNode {
   type: "JSXPassthrough";
   expression: string;
+  span?: SourceSpan;
 }
 
 export interface TextNode {
@@ -67,16 +81,22 @@ export interface TextChunk {
 export interface TextExprPart {
   type: "expr";
   value: string;
+  span?: SourceSpan;
 }
 
 export interface ExpressionNode {
   type: "Expression";
   value: string;
+  span?: SourceSpan;
 }
 
 export interface ConditionalBranch {
+  kind?: "if" | "elseIf" | "else";
   test?: string;
   body: Node[];
+  token?: string;
+  tokenSpan?: SourceSpan;
+  testSpan?: SourceSpan;
 }
 
 export interface ConditionalNode {
@@ -92,4 +112,11 @@ export interface PropsField {
   name: string;
   optional: boolean;
   typeText: string;
+  span?: SourceSpan;
+}
+
+export interface SlotBlock {
+  type: "Slot";
+  name: string;
+  children: Node[];
 }

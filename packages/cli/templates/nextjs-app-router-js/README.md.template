@@ -1,0 +1,70 @@
+# __PROJECT_NAME__
+
+This project was scaffolded with `collie create` using the Next.js App Router + JavaScript template. It is preconfigured to compile `.collie` files through `@collie-lang/next`.
+
+## Features
+
+- Next.js 14 with the App Router
+- JavaScript-based Next.js project
+- Collie template components compiled via `@collie-lang/next`
+- Tailwind CSS utilities for styling
+- Hot Module Replacement for `.collie` files
+
+## Getting Started
+
+1. Install dependencies (pnpm, npm, or yarn):
+
+   ```bash
+   pnpm install
+   ```
+
+2. Start the dev server:
+
+   ```bash
+   pnpm dev
+   ```
+
+Open [http://localhost:3000](http://localhost:3000) once the dev server is running.
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── layout.js     # Root layout
+│   ├── page.js       # Home page using Collie components
+│   └── globals.css   # Global styles
+├── components/
+│   ├── Welcome.collie
+│   ├── Card.collie
+│   └── Navigation.collie
+└── collie.d.ts       # TypeScript declarations for .collie modules
+```
+
+## Collie Components
+
+- **Welcome.collie** – demonstrates props, conditional rendering, and event handlers
+- **Card.collie** – showcases children + optional sections
+- **Navigation.collie** – renders a list using `for` loops
+
+## Configuration
+
+Collie support is enabled via `@collie-lang/next`:
+
+```javascript
+// next.config.js
+const withCollie = require("@collie-lang/next");
+
+module.exports = withCollie({
+  reactStrictMode: true
+});
+```
+
+## Type Hints
+
+`src/collie.d.ts` ships with helpful type declarations so editors still understand `.collie` imports even in JavaScript projects.
+
+## Learn More
+
+- Collie documentation: https://github.com/collie-lang/collie
+- Next.js documentation: https://nextjs.org/docs

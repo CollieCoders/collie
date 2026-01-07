@@ -1,11 +1,22 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "composite": true,
+    "rootDir": "src",
     "outDir": "dist",
     "lib": ["ES2022"],
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "emitDeclarationOnly": true,
+    "verbatimModuleSyntax": false
   },
-  "include": [
-    "src/**/*"
-  ]
+  "references": [
+    { "path": "../config" },
+    { "path": "../compiler" },
+    { "path": "../vite" }
+  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["dist", "node_modules"]
 }

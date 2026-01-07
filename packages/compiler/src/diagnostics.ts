@@ -8,6 +8,7 @@ export type DiagnosticCode =
   | "COLLIE005"
   | "COLLIE101"
   | "COLLIE102"
+  | "COLLIE103"
   | "COLLIE201"
   | "COLLIE202"
   | "COLLIE203"
@@ -24,7 +25,23 @@ export type DiagnosticCode =
   | "COLLIE304"
   | "COLLIE305"
   | "COLLIE306"
-  | "COLLIE307";
+  | "COLLIE307"
+  | "COLLIE401"
+  | "COLLIE402"
+  | "COLLIE501"
+  | "COLLIE502"
+  | "COLLIE503"
+  | "COLLIE601"
+  | "COLLIE701"
+  | "COLLIE702"
+  | "COLLIE703"
+  | "COLLIE_ID_NOT_PASCAL_CASE"
+  | "dialect.token.disallowed"
+  | "dialect.token.nonPreferred"
+  | "props.missingDeclaration"
+  | "props.unusedDeclaration"
+  | "props.style.nonPreferred"
+  | "props.block.recommendedOrRequired";
 
 export interface SourcePos {
   line: number;
@@ -41,8 +58,22 @@ export interface Diagnostic {
   severity: DiagnosticSeverity;
   message: string;
   span?: SourceSpan;
+  range?: SourceSpan;
   code?: DiagnosticCode;
   file?: string;
+  filePath?: string;
+  fix?: DiagnosticFix;
+  data?: DiagnosticData;
+}
+
+export interface DiagnosticFix {
+  range: SourceSpan;
+  replacementText: string;
+}
+
+export interface DiagnosticData {
+  kind: string;
+  [key: string]: unknown;
 }
 
 export function createSpan(line: number, col: number, length: number, lineOffset: number): SourceSpan {

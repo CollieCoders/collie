@@ -11,6 +11,9 @@ coverage/
 !.env.example
 !.env.*.example
 
+# local tarball testing
+.local-packs/
+
 # examples
 examples/*/node_modules
 examples/*/dist
@@ -18,5 +21,7 @@ examples/*/.vite
 
 # changesets
 .changeset/pre.json
+
+packages/cli/templates
 
 classes-implementation-plan.md

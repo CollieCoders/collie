@@ -1,9 +1,10 @@
 import fg from "fast-glob";
-import { compile, type CompileOptions, type Diagnostic } from "@collie-lang/compiler";
+import { compileToTsx, type Diagnostic, type TsxCompileOptions } from "@collie-lang/compiler";
 import fs from "node:fs/promises";
 import path from "node:path";
 import pc from "picocolors";
 import { resolveOutputPath, toDisplayPath } from "./fs-utils";
+import { formatDiagnosticLine, printSummary } from "./output";
 
 export interface BuildOptions {
   outDir?: string;
@@ -44,13 +45,19 @@ export async function build(input: string, options: BuildOptions = {}): Promise<
 
   if (!files.length) {
     if (!options.quiet) {
-      console.log(pc.yellow(`No Collie files found under ${toDisplayPath(resolvedInput)}`));
+      printSummary(
+        "warning",
+        `No .collie files found under ${toDisplayPath(resolvedInput)}`,
+        undefined,
+        "add a .collie file or adjust the input path"
+      );
     }
     return { totalFiles: 0, successfulFiles: 0, errors: [] };
   }
 
   if (!options.quiet) {
-    console.log(pc.cyan(`Compiling ${toDisplayPath(resolvedInput)}...\n`));
+    console.log(pc.cyan(`Compiling ${toDisplayPath(resolvedInput)}...`));
+    console.log("");
   }
 
   const result: BuildResult = {
@@ -78,12 +85,25 @@ export async function build(input: string, options: BuildOptions = {}): Promise<
   if (!options.quiet) {
     console.log("");
     if (result.errors.length === 0) {
-      console.log(pc.green(`Successfully compiled ${result.totalFiles} file${result.totalFiles === 1 ? "" : "s"}`));
+      const changeDetail = outDir
+        ? `wrote ${result.successfulFiles} .tsx file${result.successfulFiles === 1 ? "" : "s"} to ${toDisplayPath(outDir)}`
+        : `wrote ${result.successfulFiles} .tsx file${result.successfulFiles === 1 ? "" : "s"} next to the source files`;
+      printSummary(
+        "success",
+        `Compiled ${result.totalFiles} .collie file${result.totalFiles === 1 ? "" : "s"}`,
+        changeDetail,
+        "import the generated .tsx files in your app"
+      );
     } else {
-      console.log(
-        pc.red(
-          `Compiled ${result.successfulFiles} file${result.successfulFiles === 1 ? "" : "s"} with ${result.errors.length} error${result.errors.length === 1 ? "" : "s"}`
-        )
+      const changeDetail =
+        result.successfulFiles > 0
+          ? `wrote ${result.successfulFiles} .tsx file${result.successfulFiles === 1 ? "" : "s"} before failing`
+          : undefined;
+      printSummary(
+        "error",
+        `Build failed with ${result.errors.length} error${result.errors.length === 1 ? "" : "s"}`,
+        changeDetail,
+        "fix the errors above and rerun collie build"
       );
     }
   }
@@ -101,13 +121,13 @@ async function compileSingleFile(
     const source = await fs.readFile(filepath, "utf8");
     const componentName = path.basename(filepath, path.extname(filepath));
 
-    const compileOptions: CompileOptions = {
+    const compileOptions: TsxCompileOptions = {
       filename: filepath,
       componentNameHint: componentName,
       jsxRuntime: options.jsxRuntime ?? "automatic"
     };
 
-    const result = compile(source, compileOptions);
+    const result = compileToTsx(source, compileOptions);
     const errors = result.diagnostics.filter((d) => d.severity === "error");
     if (errors.length) {
       return { success: false, diagnostics: errors };
@@ -145,10 +165,8 @@ function logDiagnostics(file: string, diagnostics: Diagnostic[], force = false):
     if (!force && diag.severity !== "warning") {
       continue;
     }
-    const location = diag.span ? `${diag.span.start.line}:${diag.span.start.col}` : "";
-    const prefix = location ? `${toDisplayPath(file)}:${location}` : toDisplayPath(file);
-    const code = diag.code ? ` (${diag.code})` : "";
-    const message = `${prefix ? `${prefix}: ` : ""}${diag.severity}${code}: ${diag.message}`;
+    const displayFile = diag.file ? toDisplayPath(diag.file) : toDisplayPath(file);
+    const message = formatDiagnosticLine({ ...diag, file: displayFile }, toDisplayPath(file));
     const writer = diag.severity === "warning" ? pc.yellow : pc.red;
     console[diag.severity === "warning" ? "warn" : "error"](writer(message));
   }

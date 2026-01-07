@@ -3,36 +3,74 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 
 export interface CreateOptions {
   projectName?: string;
-  template?: "vite" | "nextjs";
+  template?: string;
   typescript?: boolean;
   packageManager?: "npm" | "yarn" | "pnpm";
   noInstall?: boolean;
   noGit?: boolean;
 }
 
+interface TemplateMeta {
+  label: string;
+  description: string;
+  variants: Record<"ts" | "js", string>;
+}
+
+const TEMPLATE_MAP: Record<string, TemplateMeta> = {
+  vite: {
+    label: "Vite + React",
+    description: "Vite 5 + React 18 starter with Collie support",
+    variants: {
+      ts: "vite-react-ts",
+      js: "vite-react-js"
+    }
+  },
+  "nextjs-app-router": {
+    label: "Next.js App Router",
+    description: "Next.js 14 App Router starter wired with @collie-lang/next",
+    variants: {
+      ts: "nextjs-app-router-ts",
+      js: "nextjs-app-router-js"
+    }
+  }
+};
+
+type TemplateKey = keyof typeof TEMPLATE_MAP;
+
 interface ResolvedOptions {
   projectName: string;
-  template: "vite";
+  template: TemplateKey;
   typescript: boolean;
   packageManager: "npm" | "yarn" | "pnpm";
   noInstall: boolean;
   noGit: boolean;
 }
 
-const TEMPLATE_MAP: Record<string, { label: string; variants: Record<"ts" | "js", string> }> = {
-  vite: {
-    label: "Vite + React",
-    variants: {
-      ts: "vite-react-ts",
-      js: "vite-react-js"
-    }
-  }
+const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {
+  next: { template: "nextjs-app-router" },
+  nextjs: { template: "nextjs-app-router", forcedTypescript: true },
+  "nextjs-app": { template: "nextjs-app-router", forcedTypescript: true }
 };
+
+export function formatTemplateList(): string {
+  return Object.entries(TEMPLATE_MAP)
+    .map(([key, meta]) => {
+      const variantInfo = [
+        `${meta.variants.ts} (TypeScript)`,
+        `${meta.variants.js} (JavaScript)`
+      ].join(", ");
+      return [
+        `  • ${key} – ${meta.label}`,
+        `    ${meta.description}`,
+        `    Variants: ${variantInfo}`
+      ].join("\n");
+    })
+    .join("\n");
+}
 
 export async function create(options: CreateOptions = {}): Promise<void> {
   const resolved = await promptForOptions(options);
@@ -142,14 +180,11 @@ async function promptForOptions(options: CreateOptions): Promise<ResolvedOptions
         })
       : {};
 
-  const template = (options.template || answers.template || "vite") as "vite";
-
-  if (!TEMPLATE_MAP[template]) {
-    throw new Error(`Template '${template}' is not available yet.`);
-  }
+  const templateResult = resolveTemplate((options.template || answers.template || "vite").trim());
 
   const typescript =
-    options.typescript !== undefined ? options.typescript : answers.typescript ?? true;
+    templateResult.forcedTypescript ??
+    (options.typescript !== undefined ? options.typescript : answers.typescript ?? true);
   const packageManager = (options.packageManager || answers.packageManager || detected) as
     | "npm"
     | "yarn"
@@ -161,12 +196,50 @@ async function promptForOptions(options: CreateOptions): Promise<ResolvedOptions
 
   return {
     projectName: (options.projectName || answers.projectName).trim(),
-    template,
+    template: templateResult.template,
     typescript,
     packageManager,
     noInstall: options.noInstall ?? false,
     noGit: options.noGit ?? false
   };
+}
+
+interface TemplateResolution {
+  template: TemplateKey;
+  forcedTypescript?: boolean;
+}
+
+function resolveTemplate(input: string): TemplateResolution {
+  const normalized = input.trim().toLowerCase();
+
+  if (TEMPLATE_MAP[normalized as TemplateKey]) {
+    return { template: normalized as TemplateKey };
+  }
+
+  const alias = TEMPLATE_ALIASES[normalized];
+  if (alias && TEMPLATE_MAP[alias.template]) {
+    return { template: alias.template, forcedTypescript: alias.forcedTypescript };
+  }
+
+  for (const key of Object.keys(TEMPLATE_MAP) as TemplateKey[]) {
+    const meta = TEMPLATE_MAP[key];
+    if (meta.variants.ts === normalized) {
+      return { template: key, forcedTypescript: true };
+    }
+    if (meta.variants.js === normalized) {
+      return { template: key, forcedTypescript: false };
+    }
+  }
+
+  return throwInvalidTemplateError(input);
+}
+
+function throwInvalidTemplateError(input: string): never {
+  const list = formatTemplateList();
+
+  throw new Error(
+    `Invalid template: '${input}'.\n\nAvailable templates:\n${list}\n\nUsage: collie create <project-name> --template <template>`
+  );
 }
 
 async function confirmOverwrite(projectName: string): Promise<boolean> {
@@ -179,10 +252,11 @@ async function confirmOverwrite(projectName: string): Promise<boolean> {
   return Boolean(overwrite);
 }
 
-function getTemplateDir(template: "vite", typescript: boolean): string {
+function getTemplateDir(template: TemplateKey, typescript: boolean): string {
   const meta = TEMPLATE_MAP[template];
   const variant = typescript ? meta.variants.ts : meta.variants.js;
-  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "templates", variant);
+  // Use __dirname in compiled CJS output to locate templates directory
+  const dir = path.resolve(__dirname, "..", "templates", variant);
 
   if (!existsSync(dir)) {
     throw new Error(
