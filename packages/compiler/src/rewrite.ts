@@ -83,6 +83,7 @@ export interface RewriteResult {
   usedPropsDot: Set<string>;         // props.<name> occurrences encountered
   callSitesBare: Set<string>;        // bare identifiers used as calls: name(...)
   callSitesPropsDot: Set<string>;    // props.name(...) occurrences
+  rewrittenAliases: Set<string>;     // prop aliases rewritten to props.<name>
 }
 
 const IGNORED_IDENTIFIERS = new Set([
@@ -159,6 +160,7 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
   const usedPropsDot = new Set<string>();
   const callSitesBare = new Set<string>();
   const callSitesPropsDot = new Set<string>();
+  const rewrittenAliases = new Set<string>();
 
   while (i < expression.length) {
     const ch = expression[i];
@@ -197,7 +199,7 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
         const name = expression.slice(start, i);
         const prevNonSpace = findPreviousNonSpace(expression, start - 1);
         const nextNonSpace = findNextNonSpace(expression, i);
-        const isMemberAccess = prevNonSpace === "." || prevNonSpace === "?";
+        const isMemberAccess = prevNonSpace === ".";
         const isObjectKey = nextNonSpace === ":" && (prevNonSpace === "{" || prevNonSpace === ",");
         const isCall = nextNonSpace === "(";
 
@@ -229,6 +231,7 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
         if (isPropAlias(env, name)) {
           // Rewrite to props.<name>
           output += `props.${name}`;
+          rewrittenAliases.add(name);
           if (isCall) {
             callSitesBare.add(name);
           }
@@ -319,7 +322,7 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
   }
 
-  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot };
+  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot, rewrittenAliases };
 }
 
 /**
@@ -340,6 +343,7 @@ export function rewriteJsxExpression(expression: string, env: TemplateEnv): Rewr
   const usedPropsDot = new Set<string>();
   const callSitesBare = new Set<string>();
   const callSitesPropsDot = new Set<string>();
+  const rewrittenAliases = new Set<string>();
 
   while (i < expression.length) {
     const ch = expression[i];
@@ -357,6 +361,7 @@ export function rewriteJsxExpression(expression: string, env: TemplateEnv): Rewr
       for (const name of result.usedPropsDot) usedPropsDot.add(name);
       for (const name of result.callSitesBare) callSitesBare.add(name);
       for (const name of result.callSitesPropsDot) callSitesPropsDot.add(name);
+      for (const name of result.rewrittenAliases) rewrittenAliases.add(name);
       
       i = braceResult.endIndex + 1;
       continue;
@@ -365,7 +370,7 @@ export function rewriteJsxExpression(expression: string, env: TemplateEnv): Rewr
     i++;
   }
 
-  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot };
+  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot, rewrittenAliases };
 }
 
 function readBalancedBraces(
