@@ -10,6 +10,7 @@ import type {
   ForNode,
   JSXPassthroughNode,
   Node,
+  PropDecl,
   PropsField,
   RootNode,
   SlotBlock,
@@ -18,7 +19,7 @@ import type {
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics.ts";
 import { enforceDialect } from "./dialect.ts";
-import { enforceProps } from "./props.ts";
+import { enforceProps, enforcePropAliases } from "./props.ts";
 
 export interface TemplateUnit {
   id: string;
@@ -446,6 +447,7 @@ function parseTemplateBlock(
         );
       } else {
         root.props = { fields: [] };
+        root.propsDecls = [];
       }
       if (level === 0) {
         propsBlockLevel = level;
@@ -503,10 +505,24 @@ function parseTemplateBlock(
         continue;
       }
 
-      // const field = parsePropsField(trimmed, lineNumber, indent + 1, lineOffset, diagnostics);
-      // if (field && root.props) {
-      //   root.props.fields.push(field);
-      // }
+      const decl = parsePropDecl(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (decl && root.propsDecls) {
+        // Check for duplicates
+        const existing = root.propsDecls.find((d) => d.name === decl.name);
+        if (existing) {
+          pushDiag(
+            diagnostics,
+            "COLLIE106",
+            `Duplicate prop declaration "${decl.name}".`,
+            lineNumber,
+            indent + 1,
+            lineOffset,
+            trimmed.length
+          );
+        } else {
+          root.propsDecls.push(decl);
+        }
+      }
       continue;
     }
 
@@ -959,6 +975,9 @@ function parseTemplateBlock(
     diagnostics.push(...enforceDialect(root, options.dialect));
     diagnostics.push(...enforceProps(root, options.dialect.props));
   }
+  
+  // Enforce #props alias diagnostics (only when #props exists)
+  diagnostics.push(...enforcePropAliases(root));
 
   return { root, diagnostics };
 }
@@ -1034,7 +1053,7 @@ function parseConditionalHeader(
     pushDiag(
       diagnostics,
       "COLLIE201",
-      kind === "if" ? "Invalid @if syntax. Use @if <condition>." : "Invalid @elseIf syntax. Use @elseIf <condition>.",
+      kind === "if" ? "Invalid @if syntax. Use @if (condition)." : "Invalid @elseIf syntax. Use @elseIf (condition).",
       lineNumber,
       column,
       lineOffset,
@@ -1059,30 +1078,40 @@ function parseConditionalHeader(
 
   const remainderTrimmed = remainder.trimStart();
   const usesParens = remainderTrimmed.startsWith("(");
+  
+  // Require parentheses
+  if (!usesParens) {
+    pushDiag(
+      diagnostics,
+      "COLLIE211",
+      kind === "if" ? "@if requires parentheses: @if (condition)" : "@elseIf requires parentheses: @elseIf (condition)",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || token.length
+    );
+    return null;
+  }
+  
   let testRaw = "";
   let remainderRaw = "";
 
-  if (usesParens) {
-    const openIndex = trimmed.indexOf("(", token.length);
-    const closeIndex = trimmed.lastIndexOf(")");
-    if (openIndex === -1 || closeIndex <= openIndex) {
-      pushDiag(
-        diagnostics,
-        "COLLIE201",
-        kind === "if" ? "Invalid @if syntax. Use @if <condition>." : "Invalid @elseIf syntax. Use @elseIf <condition>.",
-        lineNumber,
-        column,
-        lineOffset,
-        trimmed.length || token.length
-      );
-      return null;
-    }
-    testRaw = trimmed.slice(openIndex + 1, closeIndex);
-    remainderRaw = trimmed.slice(closeIndex + 1);
-  } else {
-    testRaw = remainderTrimmed;
-    remainderRaw = "";
+  const openIndex = trimmed.indexOf("(", token.length);
+  const closeIndex = trimmed.lastIndexOf(")");
+  if (openIndex === -1 || closeIndex <= openIndex) {
+    pushDiag(
+      diagnostics,
+      "COLLIE212",
+      kind === "if" ? "Unclosed parentheses in @if ( ... )" : "Unclosed parentheses in @elseIf ( ... )",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || token.length
+    );
+    return null;
   }
+  testRaw = trimmed.slice(openIndex + 1, closeIndex);
+  remainderRaw = trimmed.slice(closeIndex + 1);
 
   const test = testRaw.trim();
   if (!test) {
@@ -1142,7 +1171,23 @@ function parseElseHeader(
   const token = "@else";
   const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
   const remainderRaw = match[1] ?? "";
-  const inlineBody = remainderRaw.trim();
+  const remainderTrimmed = remainderRaw.trim();
+  
+  // Reject @else with condition (parentheses)
+  if (remainderTrimmed.startsWith("(")) {
+    pushDiag(
+      diagnostics,
+      "COLLIE213",
+      "@else does not accept a condition",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  
+  const inlineBody = remainderTrimmed;
   const remainderOffset = trimmed.length - remainderRaw.length;
   const leadingWhitespace = remainderRaw.length - inlineBody.length;
   const inlineColumn =
@@ -1172,12 +1217,62 @@ function parseForHeader(
   diagnostics: Diagnostic[]
 ): ForHeaderResult | null {
   const trimmed = lineContent.trimEnd();
-  const match = trimmed.match(/^@for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$/);
+  const token = "@for";
+  
+  if (!trimmed.startsWith(token)) {
+    pushDiag(
+      diagnostics,
+      "COLLIE210",
+      "Invalid @for syntax. Use @for (item in array).",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  
+  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
+  const remainder = trimmed.slice(token.length).trimStart();
+  
+  // Require parentheses
+  if (!remainder.startsWith("(")) {
+    pushDiag(
+      diagnostics,
+      "COLLIE211",
+      "@for requires parentheses: @for (item in array)",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  
+  const openIndex = trimmed.indexOf("(", token.length);
+  const closeIndex = trimmed.lastIndexOf(")");
+  
+  if (openIndex === -1 || closeIndex <= openIndex) {
+    pushDiag(
+      diagnostics,
+      "COLLIE212",
+      "Unclosed parentheses in @for ( ... )",
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length || 4
+    );
+    return null;
+  }
+  
+  const content = trimmed.slice(openIndex + 1, closeIndex).trim();
+  const match = content.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)$/);
+  
   if (!match) {
     pushDiag(
       diagnostics,
       "COLLIE210",
-      "Invalid @for syntax. Use @for itemName in arrayExpr.",
+      "Invalid @for syntax. Use @for (item in array).",
       lineNumber,
       column,
       lineOffset,
@@ -1185,15 +1280,15 @@ function parseForHeader(
     );
     return null;
   }
-  const token = "@for";
-  const tokenSpan = createSpan(lineNumber, column, token.length, lineOffset);
+  
   const itemName = match[1];
   const arrayExprRaw = match[2];
+  
   if (!itemName || !arrayExprRaw) {
     pushDiag(
       diagnostics,
       "COLLIE210",
-      "Invalid @for syntax. Use @for itemName in arrayExpr.",
+      "Invalid @for syntax. Use @for (item in array).",
       lineNumber,
       column,
       lineOffset,
@@ -1201,6 +1296,7 @@ function parseForHeader(
     );
     return null;
   }
+  
   const arrayExpr = arrayExprRaw.trim();
   if (!arrayExpr) {
     pushDiag(
@@ -1214,10 +1310,13 @@ function parseForHeader(
     );
     return null;
   }
+  
   const arrayExprLeadingWhitespace = arrayExprRaw.length - arrayExprRaw.trimStart().length;
-  const arrayExprStart = trimmed.length - arrayExprRaw.length;
-  const arrayExprColumn = column + arrayExprStart + arrayExprLeadingWhitespace;
+  const contentStart = openIndex + 1;
+  const arrayExprStartInContent = content.length - arrayExprRaw.length;
+  const arrayExprColumn = column + contentStart + arrayExprStartInContent + arrayExprLeadingWhitespace;
   const arrayExprSpan = createSpan(lineNumber, arrayExprColumn, arrayExpr.length, lineOffset);
+  
   return { itemName, arrayExpr, token, tokenSpan, arrayExprSpan };
 }
 
@@ -2395,6 +2494,68 @@ function parseAndAddAttribute(
       return "";
     }
   }
+}
+
+function parsePropDecl(
+  line: string,
+  lineNumber: number,
+  column: number,
+  lineOffset: number,
+  diagnostics: Diagnostic[]
+): PropDecl | null {
+  const trimmed = line.trim();
+  
+  // Check for type hints (not allowed)
+  if (trimmed.includes(":") || trimmed.includes("<") || trimmed.includes("?")) {
+    pushDiag(
+      diagnostics,
+      "COLLIE104",
+      'Types are not supported in #props yet. Use "name" or "name()".',
+      lineNumber,
+      column,
+      lineOffset,
+      trimmed.length
+    );
+    return null;
+  }
+  
+  // Check for callable form: name()
+  const callableMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\(\)$/);
+  if (callableMatch) {
+    const name = callableMatch[1];
+    const nameStart = line.indexOf(name);
+    const nameColumn = column + nameStart;
+    return {
+      name,
+      kind: "callable",
+      span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
+    };
+  }
+  
+  // Check for value form: name
+  const valueMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
+  if (valueMatch) {
+    const name = valueMatch[1];
+    const nameStart = line.indexOf(name);
+    const nameColumn = column + nameStart;
+    return {
+      name,
+      kind: "value",
+      span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
+    };
+  }
+  
+  // Invalid syntax
+  pushDiag(
+    diagnostics,
+    "COLLIE105",
+    'Invalid #props declaration. Use "name" or "name()".',
+    lineNumber,
+    column,
+    lineOffset,
+    trimmed.length
+  );
+  return null;
 }
 
 function pushDiag(

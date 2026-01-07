@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/cli",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Collie CLI.",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -29,9 +29,9 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/compiler": "^1.2.0",
-    "@collie-lang/config": "^1.2.0",
-    "@collie-lang/vite": "^1.2.0",
+    "@collie-lang/compiler": "^1.2.1",
+    "@collie-lang/config": "^1.2.1",
+    "@collie-lang/vite": "^1.2.1",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "fast-glob": "^3.3.2",

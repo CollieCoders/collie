@@ -22,6 +22,11 @@ examples/*/.vite
 # changesets
 .changeset/pre.json
 
+# package artifacts
+packages/vite/node_modules
+packages/vite/dist
+*.tgz
+
 packages/cli/templates
 
 classes-implementation-plan.md

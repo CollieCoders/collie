@@ -13,7 +13,7 @@ div(className={rootClassName})
 
   main.dashboard-main
     section.dashboard-metrics
-      @for metric in metrics
+      @for (metric in metrics)
         MetricCard(key={metric.id} metric={metric})
 
     section.dashboard-content
