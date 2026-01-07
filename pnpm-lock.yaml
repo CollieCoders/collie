@@ -37,17 +37,17 @@ importers:
   packages/cli:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../compiler
       '@collie-lang/config':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../config
       '@collie-lang/next':
         specifier: ^1.1.1
         version: 1.1.1(next@14.2.35(react-dom@18.3.1(react@19.2.3))(react@19.2.3))(webpack@5.104.1(esbuild@0.27.2))
       '@collie-lang/vite':
-        specifier: ^1.1.1
-        version: 1.1.1(vite@7.3.0(@types/node@22.19.3)(terser@5.44.1)(tsx@4.21.0))
+        specifier: ^1.1.2
+        version: link:../vite
       '@collie-lang/webpack':
         specifier: ^1.1.1
         version: 1.1.1(webpack@5.104.1(esbuild@0.27.2))
@@ -140,8 +140,8 @@ importers:
   packages/compiler:
     dependencies:
       '@collie-lang/config':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../config
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -157,6 +157,10 @@ importers:
         version: 4.21.0
 
   packages/config:
+    dependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
     devDependencies:
       rimraf:
         specifier: ^6.0.1
@@ -164,9 +168,6 @@ importers:
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
-      tsx:
-        specifier: ^4.21.0
-        version: 4.21.0
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -174,8 +175,8 @@ importers:
   packages/expo:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../compiler
       metro-react-native-babel-transformer:
         specifier: '*'
         version: 0.77.0(@babel/core@7.28.5)
@@ -202,8 +203,8 @@ importers:
   packages/next:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../compiler
       '@collie-lang/webpack':
         specifier: ^1.1.1
         version: 1.1.1(webpack@5.104.1)
@@ -258,8 +259,8 @@ importers:
   packages/vite:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../compiler
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
@@ -280,8 +281,8 @@ importers:
   packages/webpack:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: link:../compiler
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
