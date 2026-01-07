@@ -18,15 +18,13 @@ import {
   type TemplateInfo
 } from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
-import { hasNextDependency, setupNextJs } from "./nextjs-setup";
-import type { NextDirectoryInfo } from "./nextjs-setup";
 import { convertFile } from "./converter";
 import { filterDiagnostics, printDoctorResults, runDoctor } from "./doctor";
 import { formatDiagnosticLine, printSummary } from "./output";
 
 type PackageManager = "pnpm" | "yarn" | "npm";
-type Framework = "vite" | "nextjs";
-type CollieProjectType = "react-vite" | "react-next" | "react-generic" | "html";
+type Framework = "vite";
+type CollieProjectType = "react-vite" | "react-generic" | "html";
 type CssStrategy = "tailwind" | "global" | "unknown";
 type CssDiagnosticLevel = "off" | "warn";
 type PreflightCommand = "init" | "check";
@@ -77,18 +75,12 @@ const DEFAULT_DEPENDENCY_RANGE = CLI_PACKAGE_VERSION === "latest" ? "latest" : `
 const COLLIE_COMPILER_DEPENDENCY = formatCollieDependency("@collie-lang/compiler");
 const COLLIE_VITE_DEPENDENCY = formatCollieDependency("@collie-lang/vite");
 const COLLIE_DEPENDENCIES = [COLLIE_COMPILER_DEPENDENCY, COLLIE_VITE_DEPENDENCY];
-const COLLIE_NEXT_DEPENDENCY = formatCollieDependency("@collie-lang/next");
-const COLLIE_NEXT_VERSION_RANGE = normalizeDependencyRange(
-  CLI_DEPENDENCY_SPECS["@collie-lang/next"],
-  DEFAULT_DEPENDENCY_RANGE
-);
 const COLLIE_CORE_PACKAGES = ["@collie-lang/compiler", "@collie-lang/config"] as const;
 const COLLIE_VITE_PACKAGES = [
   ...COLLIE_CORE_PACKAGES,
   "@collie-lang/vite",
   "@collie-lang/html-runtime"
 ] as const;
-const COLLIE_NEXT_PACKAGES = [...COLLIE_CORE_PACKAGES, "@collie-lang/next"] as const;
 const PROMPT_OPTIONS = {
   onCancel: () => {
     console.log(pc.yellow("\nCancelled"));
@@ -443,10 +435,7 @@ async function main() {
 
     const frameworkValue = getFlag(rest, "--framework");
     const framework =
-      (frameworkValue === "vite" || frameworkValue === "nextjs"
-        ? frameworkValue
-        : undefined) ??
-      (hasFlag(rest, "--nextjs") ? "nextjs" : undefined) ??
+      (frameworkValue === "vite" ? frameworkValue : undefined) ??
       (hasFlag(rest, "--vite") ? "vite" : undefined);
 
     const typescriptFlag = hasFlag(rest, "--typescript");
@@ -729,9 +718,6 @@ async function readProjectPackage(projectRoot: string): Promise<Record<string, a
 }
 
 function detectFrameworkFromPackage(pkg: Record<string, any>): Framework | null {
-  if (hasNextDependency(pkg)) {
-    return "nextjs";
-  }
   if (getViteDependencyInfo(pkg)) {
     return "vite";
   }
@@ -739,17 +725,16 @@ function detectFrameworkFromPackage(pkg: Record<string, any>): Framework | null 
 }
 
 function mapFrameworkToProjectType(framework: Framework): CollieProjectType {
-  return framework === "nextjs" ? "react-next" : "react-vite";
+  return "react-vite";
 }
 
 function formatFrameworkLabel(framework: Framework): string {
-  return framework === "nextjs" ? "Next.js" : "Vite";
+  return "Vite";
 }
 
 function describeProjectType(projectType: CollieProjectType): string {
   const labels: Record<CollieProjectType, string> = {
     "react-vite": "React (Vite)",
-    "react-next": "React (Next.js)",
     "react-generic": "React (generic)",
     html: "HTML (no framework)"
   };
@@ -929,7 +914,6 @@ async function promptProjectType(): Promise<CollieProjectType> {
       message: "What type of project should this config describe?",
       choices: [
         { title: "React (Vite)", value: "react-vite" },
-        { title: "React (Next.js)", value: "react-next" },
         { title: "React (generic)", value: "react-generic" },
         { title: "HTML (no framework)", value: "html" }
       ],
@@ -1017,9 +1001,6 @@ function getRequiredPackages(
 ): string[] {
   if (command === "check") {
     return ["@collie-lang/compiler"];
-  }
-  if (framework === "nextjs") {
-    return [...COLLIE_NEXT_PACKAGES];
   }
   if (framework === "vite") {
     return [...COLLIE_VITE_PACKAGES];
@@ -1393,25 +1374,6 @@ function printNextSteps(pkgManager: PackageManager, configPath: string): void {
   console.log(`  - Create a Collie template under src (e.g. src/Hello.collie).`);
   console.log(`  - Import it in your React app and run ${devCommand} to start Vite.`);
   console.log(`  - Need to adjust plugins later? Edit ${path.basename(configPath)}.`);
-}
-
-function printNextJsInstructions(info?: NextDirectoryInfo): void {
-  const detected = info?.detected ?? false;
-  const routerLabel = detected ? (info?.routerType === "app" ? "App Router" : "Pages Router") : "Next.js";
-  const baseDirDisplay = (detected ? info?.baseDir ?? "app" : "app").replace(/\\/g, "/");
-  const entryFile = info?.routerType === "pages" ? "index.tsx" : "page.tsx";
-  const entryDisplay = `${baseDirDisplay}/${entryFile}`.replace(/\/+/g, "/");
-
-  console.log(pc.green("\n🎉 Collie is ready for Next.js!\n"));
-  console.log(pc.cyan(`Next steps (${routerLabel}):`));
-  console.log(`  - Import .collie components inside ${entryDisplay}:`);
-  console.log(pc.gray(`    import Welcome from "./components/Welcome.collie"`));
-  console.log("");
-  console.log("  - Collie components render as Server Components by default.");
-  console.log("  - Add @client at the top of a .collie file to opt into a Client Component.");
-  console.log("");
-  console.log("  - Run your Next.js dev server:");
-  console.log(pc.gray("    npm run dev"));
 }
 
 function formatDevCommand(pkgManager: PackageManager): string {
