@@ -446,6 +446,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
       if (!isVirtualCollieId(cleanId) && cleanId.endsWith(".collie") && !isInternalImporter) {
         this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
+        return null;
       }
       return null;
     },
