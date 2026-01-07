@@ -1,9 +1,0 @@
-{
-  "name": "collie-doctor-vite-basic",
-  "private": true,
-  "devDependencies": {
-    "vite": "^5.0.0",
-    "@collie-lang/compiler": "^1.0.0",
-    "@collie-lang/vite": "^0.1.0"
-  }
-}

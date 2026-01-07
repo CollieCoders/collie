@@ -1,63 +1,101 @@
-# Cleanup Plan (MVP: CLI + Compiler + Config + Vite)
+# Cleanup Plan (Staged) for MVP: CLI + Compiler + Config + Vite
 
-Goal: keep only `packages/cli`, `packages/compiler`, `packages/config`, and `packages/vite` for the Vite-focused MVP. Everything else is evaluated for removal or partial retention, with a focus on safety and known dependencies.
+Goal: keep only `packages/cli`, `packages/compiler`, `packages/config`, and `packages/vite` for the Vite-focused MVP. This plan is staged so you can approve/execute each stage independently.
 
-## Super safe removals (no known runtime/build dependencies in the MVP)
-These packages are not referenced by the four MVP packages and can be removed without affecting Vite-based CLI workflows.
-
-- `packages/collie-tests`
-  - Purpose appears to be internal test fixtures/workflows.
-  - No references from `packages/cli`, `packages/compiler`, `packages/config`, or `packages/vite`.
-- `packages/expo`
-  - Mobile/Expo integration not used by Vite CLI flow.
-  - No references from the MVP packages.
-- `packages/storybook`
-  - Storybook integration not used by Vite CLI flow.
-  - No references from the MVP packages.
-
-## Likely removable, but requires cleanup in CLI references/docs/templates
-These packages are not needed for the Vite-only MVP, but they are referenced by the CLI or templates. Removing them requires edits (later) to avoid broken references.
-
-- `packages/next`
-  - The CLI has Next-specific logic and templates:
-    - `packages/cli/src/nextjs-setup.ts`
-    - `packages/cli/src/index.ts` (dependency lists and logic for `@collie-lang/next`)
-    - `packages/cli/src/doctor.ts` (Next checks)
-    - `packages/cli/templates/nextjs-*` (template scaffolding)
-  - Removal is fine for a Vite-only MVP, but CLI should be simplified to drop Next commands/templates.
-- `packages/webpack`
-  - CLI declares a dependency on `@collie-lang/webpack` in `packages/cli/package.json`.
-  - Likely tied to Next/legacy webpack usage.
-  - Can be removed once CLI references are removed.
-- `packages/html-runtime`
-  - Referenced by `packages/cli/src/index.ts` as part of `COLLIE_VITE_PACKAGES`.
-  - If your Vite MVP does not need a standalone HTML runtime package, this can be removed after updating CLI logic that references it.
-
-## Conditional: may still be useful, but not required for the MVP
-These are not used directly by the MVP packages, but they are part of the Vite developer story. Keep only if you still want the default React runtime/usage path.
-
-- `packages/collie-react`
-  - Referenced in Vite docs/README as the runtime import.
-  - Not a dependency of `@collie-lang/vite` itself.
-  - If the MVP is “CLI + Vite plugin only,” you can remove it, but you may want to keep it if the expected user workflow includes React runtime components.
-
-## Notes on what stays (core MVP)
+## Stage 0: Current baseline (no changes)
+What stays:
 - `packages/cli`
 - `packages/compiler`
 - `packages/config`
 - `packages/vite`
 
-## Suggested order if you later proceed with removals (no code changes now)
-1. Remove “super safe” packages: `collie-tests`, `expo`, `storybook`.
-2. Clean CLI references to Next/webpack/html-runtime (then remove those packages).
-3. Decide on `collie-react` based on whether the MVP should support a React runtime out of the box.
+What is in scope to remove (later stages):
+- `packages/collie-tests`
+- `packages/expo`
+- `packages/storybook`
+- `packages/next`
+- `packages/webpack`
+- `packages/html-runtime`
+- `packages/collie-react`
 
-## Quick dependency checkpoints (for later)
-- CLI references to non-MVP packages:
-  - Next: `packages/cli/src/nextjs-setup.ts`, `packages/cli/src/index.ts`, `packages/cli/src/doctor.ts`, `packages/cli/templates/nextjs-*`
-  - Webpack: `packages/cli/package.json` dependencies
-  - HTML runtime: `packages/cli/src/index.ts`
-- Vite docs mention React runtime:
+## Stage 1: Super safe removals
+Rationale: these are not referenced by the MVP packages and do not appear in the CLI/Vite workflows.
+
+Packages to remove:
+- `packages/collie-tests`
+- `packages/expo`
+- `packages/storybook`
+
+Checks (manual, optional):
+- `pnpm -C packages/config build`
+- `pnpm -C packages/compiler build`
+- `pnpm -C packages/vite build`
+- `pnpm -C packages/cli build`
+
+## Stage 2: Remove Next and Webpack support from the CLI, then remove packages
+Rationale: Next/webpack are explicitly referenced by the CLI and templates. Remove references first, then delete packages.
+
+Edits to make (CLI cleanup):
+- Remove Next-specific logic and templates:
+  - `packages/cli/src/nextjs-setup.ts`
+  - Next-related sections in `packages/cli/src/index.ts`
+  - Next checks in `packages/cli/src/doctor.ts`
+  - `packages/cli/templates/nextjs-*`
+- Drop `@collie-lang/next` and `@collie-lang/webpack` from `packages/cli/package.json` dependencies.
+- Update CLI help/docs to remove Next/webpack references (if present).
+
+Packages to remove after cleanup:
+- `packages/next`
+- `packages/webpack`
+
+Checks:
+- `pnpm -C packages/cli build`
+- `pnpm -C packages/vite build`
+
+## Stage 3: Remove HTML runtime support from CLI and package
+Rationale: `@collie-lang/html-runtime` is referenced by CLI dependency lists, but not needed for the Vite-only MVP.
+
+Edits to make (CLI cleanup):
+- Remove `@collie-lang/html-runtime` from `COLLIE_VITE_PACKAGES` in `packages/cli/src/index.ts`.
+- Drop `@collie-lang/html-runtime` from any CLI messaging/docs.
+
+Package to remove:
+- `packages/html-runtime`
+
+Checks:
+- `pnpm -C packages/cli build`
+- `pnpm -C packages/vite build`
+
+## Stage 4: Decide on React runtime package
+Rationale: `packages/collie-react` is not a dependency of `@collie-lang/vite`, but it is referenced in Vite docs and may be part of the default user experience.
+
+Option A (remove it):
+- Remove `packages/collie-react`.
+- Update `packages/vite/README.md` to remove or replace React runtime references.
+
+Option B (keep it for MVP docs/demo):
+- Keep `packages/collie-react`.
+- No code changes required.
+
+Checks (if removed):
+- `pnpm -C packages/vite build`
+
+## Stage 5: Final verification (post-cleanup)
+Run the full MVP build to confirm everything is still publishable:
+- `pnpm -C packages/config build`
+- `pnpm -C packages/compiler build`
+- `pnpm -C packages/vite build`
+- `pnpm -C packages/cli build`
+
+## Reference map (for later execution)
+- Next references:
+  - `packages/cli/src/nextjs-setup.ts`
+  - `packages/cli/src/index.ts`
+  - `packages/cli/src/doctor.ts`
+  - `packages/cli/templates/nextjs-*`
+- Webpack references:
+  - `packages/cli/package.json` dependencies
+- HTML runtime references:
+  - `packages/cli/src/index.ts`
+- React runtime references:
   - `packages/vite/README.md`
-
-If you want, I can follow this plan and produce a minimal set of edits to remove those packages and clean the CLI references in a second step.
