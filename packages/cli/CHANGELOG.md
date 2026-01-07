@@ -1,5 +1,12 @@
 # @collie-lang/cli
 
+## [Unreleased]
+
+### Removed
+
+- Dropped Next.js/webpack scaffolding and templates to focus the MVP on Vite.
+- Removed dependencies on `@collie-lang/next` and `@collie-lang/webpack`.
+
 ## 1.2.0
 
 ### Minor Changes

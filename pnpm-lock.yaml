@@ -37,20 +37,14 @@ importers:
   packages/cli:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.2
+        specifier: ^1.2.0
         version: link:../compiler
       '@collie-lang/config':
-        specifier: ^1.1.2
+        specifier: ^1.2.0
         version: link:../config
-      '@collie-lang/next':
-        specifier: ^1.1.1
-        version: 1.1.1(next@14.2.35(react-dom@18.3.1(react@19.2.3))(react@19.2.3))(webpack@5.104.1(esbuild@0.27.2))
       '@collie-lang/vite':
-        specifier: ^1.1.2
+        specifier: ^1.2.0
         version: link:../vite
-      '@collie-lang/webpack':
-        specifier: ^1.1.1
-        version: 1.1.1(webpack@5.104.1(esbuild@0.27.2))
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
@@ -140,7 +134,7 @@ importers:
   packages/compiler:
     dependencies:
       '@collie-lang/config':
-        specifier: ^1.1.2
+        specifier: ^1.2.0
         version: link:../config
       typescript:
         specifier: ^5.7.2
@@ -259,7 +253,7 @@ importers:
   packages/vite:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.1.2
+        specifier: ^1.2.0
         version: link:../compiler
       fast-glob:
         specifier: ^3.3.3
@@ -783,11 +777,6 @@ packages:
 
   '@collie-lang/config@1.1.1':
     resolution: {integrity: sha512-I/wFVX7/UNkWJvuuSgxqHLSu5hm0D1185wdwV8EMxq/9i9aIuGp5HwSW4DLeO7huvb650GSlykj3Z1O5RKvskQ==}
-
-  '@collie-lang/next@1.1.1':
-    resolution: {integrity: sha512-JAdBhSUmmZH/wWdvzD4yz+0WHqyagcAgVyZkZ2VC2u9pQekHwPW6Z2hRgcD3V003L+PiiRsayNCZxGZD5BylNw==}
-    peerDependencies:
-      next: ^13.0.0 || ^14.0.0
 
   '@collie-lang/vite@1.1.1':
     resolution: {integrity: sha512-qOW9PF2cmL3hwiwcuNYJ+5YJadY2jWth+4w5PKxLa5RK1k4vb2OUMTdhjznw5liom1k0YXboxpKM+2DdBI4ntg==}
@@ -3539,14 +3528,6 @@ snapshots:
 
   '@collie-lang/config@1.1.1': {}
 
-  '@collie-lang/next@1.1.1(next@14.2.35(react-dom@18.3.1(react@19.2.3))(react@19.2.3))(webpack@5.104.1(esbuild@0.27.2))':
-    dependencies:
-      '@collie-lang/compiler': 1.1.1
-      '@collie-lang/webpack': 1.1.1(webpack@5.104.1(esbuild@0.27.2))
-      next: 14.2.35(react-dom@18.3.1(react@19.2.3))(react@19.2.3)
-    transitivePeerDependencies:
-      - webpack
-
   '@collie-lang/vite@1.1.1(vite@7.3.0(@types/node@22.19.3)(terser@5.44.1)(tsx@4.21.0))':
     dependencies:
       '@collie-lang/compiler': 1.1.1
@@ -3557,11 +3538,6 @@ snapshots:
     dependencies:
       '@collie-lang/compiler': 1.1.1
       webpack: 5.104.1(esbuild@0.25.12)
-
-  '@collie-lang/webpack@1.1.1(webpack@5.104.1(esbuild@0.27.2))':
-    dependencies:
-      '@collie-lang/compiler': 1.1.1
-      webpack: 5.104.1(esbuild@0.27.2)
 
   '@collie-lang/webpack@1.1.1(webpack@5.104.1)':
     dependencies:
@@ -5292,17 +5268,6 @@ snapshots:
     optionalDependencies:
       esbuild: 0.25.12
 
-  terser-webpack-plugin@5.3.16(esbuild@0.27.2)(webpack@5.104.1(esbuild@0.27.2)):
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      jest-worker: 27.5.1
-      schema-utils: 4.3.3
-      serialize-javascript: 6.0.2
-      terser: 5.44.1
-      webpack: 5.104.1(esbuild@0.27.2)
-    optionalDependencies:
-      esbuild: 0.27.2
-
   terser-webpack-plugin@5.3.16(webpack@5.104.1):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
@@ -5590,38 +5555,6 @@ snapshots:
       schema-utils: 4.3.3
       tapable: 2.3.0
       terser-webpack-plugin: 5.3.16(esbuild@0.25.12)(webpack@5.104.1(esbuild@0.25.12))
-      watchpack: 2.5.0
-      webpack-sources: 3.3.3
-    transitivePeerDependencies:
-      - '@swc/core'
-      - esbuild
-      - uglify-js
-
-  webpack@5.104.1(esbuild@0.27.2):
-    dependencies:
-      '@types/eslint-scope': 3.7.7
-      '@types/estree': 1.0.8
-      '@types/json-schema': 7.0.15
-      '@webassemblyjs/ast': 1.14.1
-      '@webassemblyjs/wasm-edit': 1.14.1
-      '@webassemblyjs/wasm-parser': 1.14.1
-      acorn: 8.15.0
-      acorn-import-phases: 1.0.4(acorn@8.15.0)
-      browserslist: 4.28.1
-      chrome-trace-event: 1.0.4
-      enhanced-resolve: 5.18.4
-      es-module-lexer: 2.0.0
-      eslint-scope: 5.1.1
-      events: 3.3.0
-      glob-to-regexp: 0.4.1
-      graceful-fs: 4.2.11
-      json-parse-even-better-errors: 2.3.1
-      loader-runner: 4.3.1
-      mime-types: 2.1.35
-      neo-async: 2.6.2
-      schema-utils: 4.3.3
-      tapable: 2.3.0
-      terser-webpack-plugin: 5.3.16(esbuild@0.27.2)(webpack@5.104.1(esbuild@0.27.2))
       watchpack: 2.5.0
       webpack-sources: 3.3.3
     transitivePeerDependencies:
