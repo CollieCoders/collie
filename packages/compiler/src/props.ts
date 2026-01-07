@@ -8,8 +8,8 @@ import type {
   PropsField,
   RootNode,
   TextNode
-} from "./ast";
-import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics";
+} from "./ast.ts";
+import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics.ts";
 import type { CollieDiagnosticLevel, NormalizedCollieDialectPropsOptions } from "@collie-lang/config";
 
 interface UsageOccurrence {

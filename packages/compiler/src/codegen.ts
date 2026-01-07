@@ -12,7 +12,7 @@ import type {
   RootNode,
   SlotBlock,
   TextNode
-} from "./ast";
+} from "./ast.ts";
 
 export interface RenderCodegenOptions {
   jsxRuntime: "automatic" | "classic";

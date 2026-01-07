@@ -1,11 +1,11 @@
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
-import { generateRenderModule } from "./codegen";
-import { generateHtml } from "./html-codegen";
-import { parse } from "./parser";
-import type { ParseResult, TemplateUnit } from "./parser";
-import type { Diagnostic } from "./diagnostics";
-import type { RootNode } from "./ast";
-import type { SourceSpan } from "./diagnostics";
+import { generateRenderModule } from "./codegen.ts";
+import { generateHtml } from "./html-codegen.ts";
+import { parse } from "./parser.ts";
+import type { ParseResult, TemplateUnit } from "./parser.ts";
+import type { Diagnostic } from "./diagnostics.ts";
+import type { RootNode } from "./ast.ts";
+import type { SourceSpan } from "./diagnostics.ts";
 
 export type {
   CollieConfig,
@@ -44,9 +44,9 @@ export type {
   DiagnosticSeverity,
   SourcePos,
   SourceSpan
-} from "./diagnostics";
-export { applyFixes, fixAllFromDiagnostics } from "./fixes";
-export type { ParseResult, TemplateUnit } from "./parser";
+} from "./diagnostics.ts";
+export { applyFixes, fixAllFromDiagnostics } from "./fixes.ts";
+export type { ParseResult, TemplateUnit } from "./parser.ts";
 export type {
   Attribute,
   ClassAliasDecl,
@@ -67,11 +67,11 @@ export type {
   TextExprPart,
   TextNode,
   TextPart
-} from "./ast";
-export type { FormatOptions, FormatResult } from "./format";
-export { formatCollie } from "./format";
-export type { ConvertTsxOptions, ConvertTsxResult } from "./convert";
-export { convertTsxToCollie } from "./convert";
+} from "./ast.ts";
+export type { FormatOptions, FormatResult } from "./format.ts";
+export { formatCollie } from "./format.ts";
+export type { ConvertTsxOptions, ConvertTsxResult } from "./convert.ts";
+export { convertTsxToCollie } from "./convert.ts";
 
 export interface ParseCollieOptions {
   filename?: string;

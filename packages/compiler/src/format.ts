@@ -6,10 +6,10 @@ import type {
   RootNode,
   TextNode,
   TextPart
-} from "./ast";
-import type { Diagnostic } from "./diagnostics";
-import { parse } from "./parser";
-import type { TemplateUnit } from "./parser";
+} from "./ast.ts";
+import type { Diagnostic } from "./diagnostics.ts";
+import { parse } from "./parser.ts";
+import type { TemplateUnit } from "./parser.ts";
 
 export interface FormatOptions {
   indent?: number;

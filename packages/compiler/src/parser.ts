@@ -14,11 +14,11 @@ import type {
   RootNode,
   SlotBlock,
   TextNode
-} from "./ast";
+} from "./ast.ts";
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
-import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics";
-import { enforceDialect } from "./dialect";
-import { enforceProps } from "./props";
+import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics.ts";
+import { enforceDialect } from "./dialect.ts";
+import { enforceProps } from "./props.ts";
 
 export interface TemplateUnit {
   id: string;
