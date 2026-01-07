@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { detectNextDirectory, type NextDirectoryInfo, type NextRouterType } from "./detect";
+import { detectNextDirectory, type NextDirectoryInfo, type NextRouterType } from "./detect.ts";
 
 export interface ColliePluginOptions {
   webpack?: NonNullable<NextConfig["webpack"]>;

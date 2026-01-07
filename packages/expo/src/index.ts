@@ -37,4 +37,4 @@ export function withCollieMetro<T extends MetroConfigShape>(
   };
 }
 
-export { createCollieMetroTransformer } from "./metro-transformer";
+export { createCollieMetroTransformer } from "./metro-transformer.js";
