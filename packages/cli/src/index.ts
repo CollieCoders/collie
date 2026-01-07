@@ -1274,21 +1274,26 @@ function transformViteConfig(source: string): { code: string; changed: boolean }
 
         if (hasCollie && !needsPlugin) {
           // Already has collie, just ensure ordering
-          if (hasReact && reactIndex > collieIndex) {
-            // Wrong order, need to swap
+          if (hasReact && collieIndex > reactIndex) {
+            // Wrong order: collie is after react, need to move collie before react
             const newElements = [...elements];
-            const reactPlugin = newElements[reactIndex];
-            const colliePlugin = newElements[collieIndex];
-            newElements[collieIndex] = reactPlugin;
-            newElements[reactIndex] = colliePlugin;
+            const colliePlugin = newElements.splice(collieIndex, 1)[0];
+            newElements.splice(reactIndex, 0, colliePlugin);
             return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
           }
           return array; // Order is fine
         }
 
         if (!hasCollie && needsPlugin) {
-          // Need to add collie at the end
-          const newElements = [...elements, createCollieCall()];
+          // Need to add collie
+          const newElements = [...elements];
+          if (hasReact) {
+            // Insert collie immediately before react
+            newElements.splice(reactIndex, 0, createCollieCall());
+          } else {
+            // No react plugin, add collie as first element
+            newElements.unshift(createCollieCall());
+          }
           return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
         }
 
