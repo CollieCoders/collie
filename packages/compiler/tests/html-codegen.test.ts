@@ -4,6 +4,7 @@ import { compileToHtml } from "../src/index";
 console.log("▶ html-codegen :: implicit div shorthand");
 
 const source = `
+#id html.codegen
 section.hero
   .hero-inner
     p Hello, world!

@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/webpack",
-  "version": "5.0.0",
+  "version": "1.2.0",
   "description": "Webpack loader for Collie template language",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -20,6 +20,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"(mvp) no lint configured\"",
     "test": "vitest run"
@@ -32,11 +33,12 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@collie-lang/compiler": "workspace:*"
+    "@collie-lang/compiler": "^1.2.0"
   },
   "devDependencies": {
     "@types/webpack": "^5.28.5",
     "@types/node": "^20.0.0",
+    "rimraf": "^6.0.1",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^1.6.0",

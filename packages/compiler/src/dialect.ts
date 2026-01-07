@@ -4,8 +4,8 @@ import type {
   ForNode,
   Node,
   RootNode
-} from "./ast";
-import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics";
+} from "./ast.ts";
+import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics.ts";
 import type {
   CollieDiagnosticLevel,
   NormalizedCollieDialectOptions,

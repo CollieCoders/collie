@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/config",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Shared configuration types and helpers for Collie.",
   "license": "MIT",
   "type": "module",
@@ -20,6 +20,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
   "dependencies": {
     "tsx": "^4.21.0"
   },
@@ -27,10 +31,13 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"(mvp) no lint configured\""
   },
   "devDependencies": {
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   }
 }

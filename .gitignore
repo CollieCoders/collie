@@ -11,6 +11,9 @@ coverage/
 !.env.example
 !.env.*.example
 
+# local tarball testing
+.local-packs/
+
 # examples
 examples/*/node_modules
 examples/*/dist

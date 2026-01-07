@@ -2,17 +2,21 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import fg from "fast-glob";
 import { diffLines } from "diff";
 import pc from "picocolors";
 import prompts from "prompts";
 import { formatSource } from "./formatter";
-import { loadAndNormalizeConfig } from "@collie-lang/config";
 import type { Diagnostic } from "@collie-lang/compiler";
 import { watch as watchCollie } from "./watcher";
 import { build as runBuild } from "./builder";
-import { check as runCheck } from "./checker";
+import {
+  buildDuplicateDiagnostics,
+  check as runCheck,
+  scanTemplates,
+  type TemplateInfo
+} from "./checker";
 import { create as createProject, formatTemplateList } from "./creator";
 import { hasNextDependency, setupNextJs } from "./nextjs-setup";
 import type { NextDirectoryInfo } from "./nextjs-setup";
@@ -158,6 +162,37 @@ async function main() {
     return;
   }
 
+  if (cmd === "ids") {
+    const rest = args.slice(1);
+    const patterns = rest.filter((arg) => !arg.startsWith("-"));
+    const resolvedPatterns = patterns.length ? patterns : ["**/*.collie"];
+    try {
+      await runIds(resolvedPatterns);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      printCliError(message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (cmd === "explain") {
+    const rest = args.slice(1);
+    const { id, patterns } = parseExplainArgs(rest);
+    if (!id) {
+      throw new Error("No template id provided. Usage: collie explain <id> [files...]");
+    }
+    const resolvedPatterns = patterns.length ? patterns : ["**/*.collie"];
+    try {
+      await runExplain(id, resolvedPatterns);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      printCliError(message);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (cmd === "config") {
     const rest = args.slice(1);
     const shouldPrint = hasFlag(rest, "--print");
@@ -171,6 +206,14 @@ async function main() {
       : filePath
         ? path.dirname(path.resolve(process.cwd(), filePath))
         : process.cwd();
+
+    let loadAndNormalizeConfig: typeof import("@collie-lang/config").loadAndNormalizeConfig;
+    try {
+      ({ loadAndNormalizeConfig } = await import("@collie-lang/config"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to load @collie-lang/config (${message}).`);
+    }
 
     const normalized = await loadAndNormalizeConfig({ cwd });
     if (!normalized) {
@@ -458,9 +501,11 @@ Usage:
   collie <command> [options]
 
 Commands:
-  collie build    Compile .collie templates to .tsx
+  collie build    Compile .collie templates to output files
   collie check    Validate .collie templates
   collie config   Print resolved Collie config (json)
+  collie ids      List template ids and their locations
+  collie explain  Find the file + location for a template id
   collie format   Format .collie templates
   collie convert  Convert JSX/TSX to .collie templates
   collie doctor   Diagnose setup issues
@@ -468,6 +513,107 @@ Commands:
   collie watch    Watch and compile templates
   collie create   Scaffold a new Collie project
 `);
+}
+
+async function runIds(patterns: string[]): Promise<void> {
+  const scan = await scanTemplates(patterns);
+  const diagnostics = [...scan.diagnostics, ...buildDuplicateDiagnostics(scan.templates)];
+  const errors = diagnostics.filter((diag) => diag.severity === "error");
+
+  if (diagnostics.length) {
+    printTemplateDiagnostics(diagnostics);
+  }
+
+  if (errors.length) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const templates = [...scan.templates].sort((a, b) => {
+    const byId = a.id.localeCompare(b.id);
+    if (byId !== 0) return byId;
+    return a.displayPath.localeCompare(b.displayPath);
+  });
+
+  if (!templates.length) {
+    printSummary(
+      "warning",
+      "No template ids found",
+      `checked ${scan.files.length} file${scan.files.length === 1 ? "" : "s"}`,
+      "add #id blocks then rerun collie ids"
+    );
+    return;
+  }
+
+  for (const template of templates) {
+    console.log(`${template.id}  ${formatTemplateLocation(template)}`);
+  }
+}
+
+async function runExplain(id: string, patterns: string[]): Promise<void> {
+  const scan = await scanTemplates(patterns);
+  const diagnostics = [...scan.diagnostics, ...buildDuplicateDiagnostics(scan.templates)];
+  const errors = diagnostics.filter((diag) => diag.severity === "error");
+
+  if (diagnostics.length) {
+    printTemplateDiagnostics(diagnostics);
+  }
+
+  if (errors.length) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const matches = scan.templates.filter((template) => template.id === id);
+  if (!matches.length) {
+    const knownIds = Array.from(new Set(scan.templates.map((template) => template.id))).sort();
+    const preview = knownIds.slice(0, 5);
+    const suffix = knownIds.length > preview.length ? "..." : "";
+    const details = preview.length ? `Known ids: ${preview.join(", ")}${suffix}` : "No template ids found.";
+    printCliError(`Unknown template id "${id}". ${details}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const sorted = matches.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
+  for (const template of sorted) {
+    console.log(`${template.id}  ${formatTemplateLocation(template)}`);
+  }
+}
+
+function parseExplainArgs(args: string[]): { id?: string; patterns: string[] } {
+  let id: string | undefined;
+  const patterns: string[] = [];
+  for (const arg of args) {
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    if (!id) {
+      id = arg;
+      continue;
+    }
+    patterns.push(arg);
+  }
+  return { id, patterns };
+}
+
+function formatTemplateLocation(template: TemplateInfo): string {
+  const span = template.span;
+  if (span) {
+    return `${template.displayPath}:${span.start.line}:${span.start.col}`;
+  }
+  return template.displayPath;
+}
+
+function printTemplateDiagnostics(diagnostics: Diagnostic[]): void {
+  for (const diag of diagnostics) {
+    const message = formatDiagnosticLine(diag);
+    const writer = diag.severity === "warning" ? pc.yellow : pc.red;
+    console.log(writer(message));
+  }
+  if (diagnostics.length) {
+    console.log("");
+  }
 }
 
 async function runInit(options: InitOptions = {}): Promise<void> {
@@ -944,95 +1090,218 @@ async function patchViteConfig(configPath: string): Promise<"patched" | "already
     return "already-configured";
   }
 
-  let updated = original;
+  try {
+    const result = transformViteConfig(original);
+    if (!result.changed) {
+      return "already-configured";
+    }
+    await fs.writeFile(configPath, result.code, "utf8");
+    return "patched";
+  } catch (error) {
+    // Fall back to manual if AST transformation fails
+    return "manual";
+  }
+}
+
+function transformViteConfig(source: string): { code: string; changed: boolean } {
+  const sourceFile = ts.createSourceFile(
+    "vite.config.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+
+  let needsImport = !source.includes("@collie-lang/vite");
+  let needsPlugin = !/\bcollie\s*\(/.test(source);
   let changed = false;
 
-  if (!hasImport) {
-    updated = injectImport(updated);
-    changed = true;
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
+  const transformer: ts.TransformerFactory<ts.SourceFile> = (context) => {
+    return (rootNode) => {
+      function visit(node: ts.Node): ts.Node {
+        // Handle imports - add collie import after last import
+        if (needsImport && ts.isImportDeclaration(node)) {
+          // We'll add the import after we've processed all nodes
+          return node;
+        }
+
+        // Find defineConfig call and modify plugins array
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "defineConfig" &&
+          node.arguments.length > 0
+        ) {
+          const configArg = node.arguments[0];
+          if (ts.isObjectLiteralExpression(configArg)) {
+            const updatedConfig = updateConfigObject(configArg);
+            if (updatedConfig !== configArg) {
+              changed = true;
+              return ts.factory.updateCallExpression(
+                node,
+                node.expression,
+                node.typeArguments,
+                [updatedConfig]
+              );
+            }
+          }
+        }
+
+        return ts.visitEachChild(node, visit, context);
+      }
+
+      function updateConfigObject(configObj: ts.ObjectLiteralExpression): ts.ObjectLiteralExpression {
+        let pluginsProperty: ts.PropertyAssignment | undefined;
+        const otherProperties: ts.ObjectLiteralElementLike[] = [];
+
+        for (const prop of configObj.properties) {
+          if (
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === "plugins"
+          ) {
+            pluginsProperty = prop;
+          } else {
+            otherProperties.push(prop);
+          }
+        }
+
+        let updatedPluginsArray: ts.ArrayLiteralExpression;
+
+        if (pluginsProperty && ts.isArrayLiteralExpression(pluginsProperty.initializer)) {
+          updatedPluginsArray = ensurePluginOrdering(pluginsProperty.initializer);
+          if (updatedPluginsArray === pluginsProperty.initializer) {
+            // No changes needed
+            return configObj;
+          }
+        } else if (needsPlugin) {
+          // Create plugins array with just collie()
+          updatedPluginsArray = ts.factory.createArrayLiteralExpression(
+            [createCollieCall()],
+            false
+          );
+        } else {
+          return configObj;
+        }
+
+        const updatedPluginsProperty = ts.factory.createPropertyAssignment(
+          "plugins",
+          updatedPluginsArray
+        );
+
+        // Rebuild properties array with updated plugins
+        if (pluginsProperty) {
+          // Replace existing plugins property
+          const allProperties = [...otherProperties, updatedPluginsProperty];
+          return ts.factory.updateObjectLiteralExpression(configObj, allProperties);
+        } else {
+          // Add new plugins property
+          const allProperties = [...otherProperties, updatedPluginsProperty];
+          return ts.factory.updateObjectLiteralExpression(configObj, allProperties);
+        }
+      }
+
+      function ensurePluginOrdering(array: ts.ArrayLiteralExpression): ts.ArrayLiteralExpression {
+        const elements = Array.from(array.elements);
+        let hasReact = false;
+        let hasCollie = false;
+        let reactIndex = -1;
+        let collieIndex = -1;
+
+        // Check what we already have
+        elements.forEach((elem, idx) => {
+          if (ts.isCallExpression(elem) && ts.isIdentifier(elem.expression)) {
+            if (elem.expression.text === "react") {
+              hasReact = true;
+              reactIndex = idx;
+            } else if (elem.expression.text === "collie") {
+              hasCollie = true;
+              collieIndex = idx;
+            }
+          }
+        });
+
+        // Determine if array is multiline by checking if it has more than one element
+        const isMultiLine = elements.length > 1;
+
+        if (hasCollie && !needsPlugin) {
+          // Already has collie, just ensure ordering
+          if (hasReact && reactIndex > collieIndex) {
+            // Wrong order, need to swap
+            const newElements = [...elements];
+            const reactPlugin = newElements[reactIndex];
+            const colliePlugin = newElements[collieIndex];
+            newElements[collieIndex] = reactPlugin;
+            newElements[reactIndex] = colliePlugin;
+            return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
+          }
+          return array; // Order is fine
+        }
+
+        if (!hasCollie && needsPlugin) {
+          // Need to add collie at the end
+          const newElements = [...elements, createCollieCall()];
+          return ts.factory.createArrayLiteralExpression(newElements, isMultiLine);
+        }
+
+        return array;
+      }
+
+      function createCollieCall(): ts.CallExpression {
+        return ts.factory.createCallExpression(
+          ts.factory.createIdentifier("collie"),
+          undefined,
+          []
+        );
+      }
+
+      const visited = ts.visitNode(rootNode, visit) as ts.SourceFile;
+
+      // Add import if needed
+      if (needsImport && changed) {
+        const collieImport = ts.factory.createImportDeclaration(
+          undefined,
+          ts.factory.createImportClause(
+            false,
+            ts.factory.createIdentifier("collie"),
+            undefined
+          ),
+          ts.factory.createStringLiteral("@collie-lang/vite", true)
+        );
+
+        // Find last import to insert after
+        let lastImportIndex = -1;
+        for (let i = 0; i < visited.statements.length; i++) {
+          if (ts.isImportDeclaration(visited.statements[i])) {
+            lastImportIndex = i;
+          }
+        }
+
+        const statements = Array.from(visited.statements);
+        if (lastImportIndex >= 0) {
+          statements.splice(lastImportIndex + 1, 0, collieImport);
+        } else {
+          statements.unshift(collieImport);
+        }
+
+        return ts.factory.updateSourceFile(visited, statements);
+      }
+
+      return visited;
+    };
+  };
+
+  const result = ts.transform(sourceFile, [transformer]);
+  const transformedSourceFile = result.transformed[0];
+  result.dispose();
+
+  if (!changed) {
+    return { code: source, changed: false };
   }
 
-  if (!hasPlugin) {
-    const withPlugin = injectColliePlugin(updated);
-    if (!withPlugin) {
-      return "manual";
-    }
-    updated = withPlugin;
-    changed = true;
-  }
-
-  if (changed) {
-    await fs.writeFile(configPath, updated, "utf8");
-    return "patched";
-  }
-
-  return "already-configured";
-}
-
-function injectColliePlugin(source: string): string | null {
-  const pluginPattern = /plugins\s*[:=]\s*\[/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = pluginPattern.exec(source)) !== null) {
-    const bracketIndex = match.index + match[0].length - 1;
-    const updated = insertPluginIntoArray(source, bracketIndex);
-    if (updated) {
-      return updated;
-    }
-  }
-
-  return null;
-}
-
-function insertPluginIntoArray(source: string, bracketStart: number): string | null {
-  const bracketEnd = findMatchingBracket(source, bracketStart);
-  if (bracketEnd === -1) return null;
-
-  const before = source.slice(0, bracketStart + 1);
-  const inside = source.slice(bracketStart + 1, bracketEnd);
-  const after = source.slice(bracketEnd);
-  const trimmedInside = inside.trim();
-
-  const lineStart = source.lastIndexOf("\n", bracketStart);
-  const indentMatch = source.slice(lineStart + 1, bracketStart).match(/^\s*/);
-  const baseIndent = indentMatch ? indentMatch[0] : "";
-  const entryIndent = `${baseIndent}  `;
-
-  if (!trimmedInside) {
-    const insertion = `\n${entryIndent}collie()\n${baseIndent}`;
-    return `${before}${insertion}${after}`;
-  }
-
-  const afterOpenIndex = bracketStart + 1;
-  const rest = source.slice(afterOpenIndex, bracketEnd);
-  const leadingWhitespaceMatch = rest.match(/^\s*/);
-  const leadingWhitespace = leadingWhitespaceMatch ? leadingWhitespaceMatch[0] : "";
-  const isMultiline = leadingWhitespace.includes("\n");
-  const insertText = isMultiline
-    ? `\n${entryIndent}collie(),`
-    : ` collie(),${needsTrailingSpace(rest) ? " " : ""}`;
-
-  return `${source.slice(0, afterOpenIndex)}${insertText}${source.slice(afterOpenIndex)}`;
-}
-
-function needsTrailingSpace(rest: string): boolean {
-  const trimmed = rest.trimStart();
-  if (!trimmed.length) return false;
-  const nextChar = trimmed[0];
-  return nextChar !== "," && nextChar !== " ";
-}
-
-function findMatchingBracket(text: string, openIndex: number): number {
-  let depth = 0;
-  for (let i = openIndex; i < text.length; i++) {
-    const char = text[i];
-    if (char === "[") depth++;
-    else if (char === "]") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
+  const output = printer.printFile(transformedSourceFile);
+  return { code: output, changed: true };
 }
 
 async function ensureCollieDeclaration(root: string): Promise<void> {
@@ -1062,25 +1331,12 @@ function findViteConfigFile(root: string): string | null {
   return null;
 }
 
-function injectImport(source: string): string {
-  const importStatement = `import collie from "@collie-lang/vite";\n`;
-  const importMatches = [...source.matchAll(/^import.*$/gm)];
-  const insertPos =
-    importMatches.length > 0 ? computeInsertPos(source, importMatches[importMatches.length - 1]) : 0;
-  return source.slice(0, insertPos) + importStatement + source.slice(insertPos);
-}
-
-function computeInsertPos(content: string, match: RegExpMatchArray): number {
-  let pos = (match.index ?? 0) + match[0].length;
-  if (content[pos] === "\r") pos += 1;
-  if (content[pos] === "\n") pos += 1;
-  return pos;
-}
+// Import injection is now handled by transformViteConfig AST transformer
 
 function readCliPackageInfo(): { version: string; dependencies: Record<string, string> } {
   try {
-    const dir = path.dirname(fileURLToPath(import.meta.url));
-    const pkgPath = path.resolve(dir, "..", "package.json");
+    // Use __dirname in compiled CJS output to locate package.json
+    const pkgPath = path.resolve(__dirname, "..", "package.json");
     const raw = readFileSync(pkgPath, "utf8");
     const pkg = JSON.parse(raw);
     const version = typeof pkg.version === "string" ? pkg.version : "latest";

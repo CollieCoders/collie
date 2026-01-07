@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/collie-tests",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Scaffolding for Collie CLI + TypeScript harness tests.",

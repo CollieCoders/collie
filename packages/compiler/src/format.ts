@@ -6,9 +6,10 @@ import type {
   RootNode,
   TextNode,
   TextPart
-} from "./ast";
-import type { Diagnostic } from "./diagnostics";
-import { parse } from "./parser";
+} from "./ast.ts";
+import type { Diagnostic } from "./diagnostics.ts";
+import { parse } from "./parser.ts";
+import type { TemplateUnit } from "./parser.ts";
 
 export interface FormatOptions {
   indent?: number;
@@ -35,7 +36,7 @@ export function formatCollie(source: string, options: FormatOptions = {}): Forma
     };
   }
 
-  const serialized = serializeRoot(parseResult.root, indentSize);
+  const serialized = serializeTemplates(parseResult.templates, indentSize);
   const formatted = ensureTrailingNewline(serialized);
 
   return {
@@ -65,6 +66,28 @@ function validateIndentOption(indent?: number): number {
     throw new Error("Indent width must be a positive integer.");
   }
   return Math.floor(indent);
+}
+
+function serializeTemplates(templates: TemplateUnit[], indentSize: number): string {
+  const lines: string[] = [];
+
+  for (const template of templates) {
+    if (lines.length && lines[lines.length - 1] !== "") {
+      lines.push("");
+    }
+    const idValue = template.rawId || template.id;
+    lines.push(cleanLine(`#id ${idValue}`));
+    const body = serializeRoot(template.ast, indentSize);
+    if (body.trim().length > 0) {
+      lines.push(...body.split("\n"));
+    }
+  }
+
+  while (lines.length && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines.join("\n");
 }
 
 function serializeRoot(root: RootNode, indentSize: number): string {

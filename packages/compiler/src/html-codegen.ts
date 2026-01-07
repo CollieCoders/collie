@@ -5,7 +5,7 @@ import type {
   Node,
   RootNode,
   TextNode
-} from "./ast";
+} from "./ast.ts";
 
 export interface HtmlCodegenOptions {
   indent?: string;

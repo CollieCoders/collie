@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build": "pnpm -r --filter='@collie-lang/*' build",
+    "build": "pnpm run build:core",
+    "build:core": "pnpm --filter @collie-lang/config build && pnpm --filter @collie-lang/compiler build && pnpm --filter @collie-lang/vite build && pnpm --filter @collie-lang/cli build",
     "dev": "pnpm -r --parallel --filter='@collie-lang/*' dev",
     "clean": "pnpm -r clean && rimraf node_modules",
     "lint": "pnpm -r lint",
@@ -17,7 +18,11 @@
     "test:collie": "pnpm -C packages/collie-tests test",
     "test:cli": "pnpm -C packages/collie-tests test:cli",
     "test:integration": "pnpm -C packages/collie-tests test",
-    "test:watch": "pnpm -C packages/collie-tests test:watch"
+    "test:watch": "pnpm -C packages/collie-tests test:watch",
+    "relink": "scripts/reset-collie-links.sh",
+    "file-tree": "tree -l 20 -o file-tree.txt --ignore='node_modules/'",
+    "local:pack": "node scripts/local-pack.mjs",
+    "local:clean": "rimraf .local-packs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",

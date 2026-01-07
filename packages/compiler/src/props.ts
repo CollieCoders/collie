@@ -8,8 +8,8 @@ import type {
   PropsField,
   RootNode,
   TextNode
-} from "./ast";
-import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics";
+} from "./ast.ts";
+import type { Diagnostic, DiagnosticSeverity, SourceSpan } from "./diagnostics.ts";
 import type { CollieDiagnosticLevel, NormalizedCollieDialectPropsOptions } from "@collie-lang/config";
 
 interface UsageOccurrence {
@@ -207,6 +207,17 @@ export function enforceProps(
       if (occurrence.kind === "namespace") {
         recordUsage(usedNamespace, name, usageSpan);
         usedAny.add(name);
+        if (
+          propsConfig.requireDeclarationForLocals &&
+          !declaredProps.has(name) &&
+          !missingReported.has(name)
+        ) {
+          const severity = levelToSeverity(propsConfig.diagnostics.missingDeclaration);
+          if (severity) {
+            diagnostics.push(createMissingDeclarationDiagnostic(name, severity, usageSpan));
+            missingReported.add(name);
+          }
+        }
         if (flagNamespaceStyle && !namespaceStyleReported.has(name)) {
           const severity = levelToSeverity(propsConfig.diagnostics.style);
           if (severity) {
@@ -295,7 +306,7 @@ function createMissingDeclarationDiagnostic(
   return {
     severity,
     code: "props.missingDeclaration",
-    message: `Prop "${name}" is used without a props declaration.`,
+    message: `Prop \`${name}\` is used but not declared in \`#props\`.`,
     span,
     data: {
       kind: "addPropDeclaration",
@@ -380,7 +391,8 @@ function scanExpression(expression: string): UsageOccurrence[] {
           i++;
         }
         const name = expression.slice(start, i);
-        if (name === "props") {
+        const prevNonSpace = findPreviousNonSpace(expression, start - 1);
+        if (name === "props" && prevNonSpace !== ".") {
           const namespace = readNamespaceAccess(expression, i);
           if (namespace) {
             occurrences.push({
@@ -393,7 +405,6 @@ function scanExpression(expression: string): UsageOccurrence[] {
             continue;
           }
         }
-        const prevNonSpace = findPreviousNonSpace(expression, start - 1);
         if (prevNonSpace !== ".") {
           occurrences.push({ name, kind: "local", index: start, length: name.length });
         }

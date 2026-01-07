@@ -1,3 +1,4 @@
+#id nasty
 props
   items: Array<{ id: string; label: string }>
   showFlag: boolean

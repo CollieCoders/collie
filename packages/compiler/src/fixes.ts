@@ -1,4 +1,4 @@
-import type { Diagnostic, DiagnosticFix, SourceSpan } from "./diagnostics";
+import type { Diagnostic, DiagnosticFix, SourceSpan } from "./diagnostics.ts";
 
 interface FixWithOffsets {
   fix: DiagnosticFix;

@@ -1,4 +1,4 @@
-import type { SourceSpan } from "./diagnostics";
+import type { SourceSpan } from "./diagnostics.ts";
 
 export interface ClassAliasDecl {
   name: string;

@@ -1,3 +1,13 @@
+#id App
+props
+  title: string
+  link: string
+  isMember: boolean
+
 div.app
-  h1 Hello from Collie
+  h1 {{ title }}
   p Vite build smoke test
+  a(href={link}) Visit docs
+  @if (isMember)
+    p
+      "Member access enabled"

@@ -2,6 +2,9 @@
 
 Next.js plugin for Collie template language.
 
+> ⚠️ **Deprecated workflow note**  
+> This README still documents the legacy `.collie` import model. The new registry + `<Collie id="...">` runtime is described in `ARCHITECTURE.md`, and the old component imports / component-name-derived addressing will be replaced in a future stage.
+
 ## Installation
 
 ```bash
