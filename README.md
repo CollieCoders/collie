@@ -5,6 +5,9 @@ It brings the readability of Pug, the structure of modern component systems, and
 
 Collie templates compile directly to **clean, predictable JSX/TSX**, integrate seamlessly with **Vite**, and work flawlessly inside any modern React stack.
 
+> ⚠️ **Registry workflow**  
+> Direct `.collie` imports are disabled. Use the registry-based `<Collie id="...">` runtime described in `ARCHITECTURE.md`.
+
 ---
 
 <p align="center">
@@ -23,7 +26,7 @@ JSX is powerful—but also noisy, deeply nested, and difficult to scan. Collie f
 No closing tags. No angle-bracket soup. Just indentation.
 
 ### **2. First-class React compatibility**
-Every `.collie` file compiles to JSX or TSX that you can drop directly into your components.
+Templates compile to render modules that the `<Collie id="...">` runtime loads on demand.
 
 ### **3. Built-in ergonomics**
 - `#props` block for typed props  
@@ -37,8 +40,8 @@ Every `.collie` file compiles to JSX or TSX that you can drop directly into your
 - **CLI** (`collie build`, `collie check`, etc.)  
 - **Full VS Code extension** (syntax, semantic tokens, formatting, diagnostics, conversions)
 
-### **5. Zero-runtime templates**
-Collie compiles to JSX—no custom runtime, no hydration weirdness, no proprietary component model.
+### **5. Minimal runtime**
+Collie uses a tiny registry runtime while keeping templates as plain JSX/TSX render functions.
 
 ---
 
@@ -47,6 +50,7 @@ Collie compiles to JSX—no custom runtime, no hydration weirdness, no proprieta
 ### `Welcome.collie`
 
 ```collie
+#id welcome.hero
 #props
   name: string
   isMember: boolean
@@ -68,7 +72,17 @@ div.hero
       Join Now
 ```
 
-This compiles to idiomatic TSX with clean indentation, no surprises.
+Use it from React via the registry runtime:
+
+```tsx
+import { Collie } from '@collie-lang/react'
+
+export function App() {
+  return <Collie id="welcome.hero" name="Josh" isMember />
+}
+```
+
+This compiles to idiomatic TSX render modules with clean indentation, no surprises.
 
 ---
 
@@ -78,8 +92,9 @@ This repo uses **pnpm workspaces** and contains all official Collie tooling:
 
 ```
 packages/
+  collie-react – React runtime `<Collie id>` component backed by the build-time registry
   compiler   – Collie parser, AST, printer, and JSX generator
-  vite       – Vite plugin for `.collie` → JSX transforms
+  vite       – Vite plugin that builds the template registry + virtual modules
   webpack    – Webpack loader used by other tooling (e.g. Next.js)
   next       – Next.js plugin that wires the loader into the framework
   cli        – Collie CLI (build, watch, validate, scaffold projects)
@@ -89,9 +104,7 @@ Additional packages may be added in the future as Collie grows (language server,
 
 ## ✅ Supported Frameworks
 
-- **Vite** via `@collie-lang/vite`
-- **Next.js** via `@collie-lang/next`
-- Webpack-based environments can also consume `.collie` files directly through `@collie-lang/webpack`.
+- **Vite** via `@collie-lang/vite` (registry workflow)
 
 ---
 
@@ -102,17 +115,15 @@ Additional packages may be added in the future as Collie grows (language server,
 ```bash
 # Existing Vite project
 pnpm dlx @collie-lang/cli init --vite
-
-# Scaffold a brand new Next.js project with Collie support
-pnpm dlx @collie-lang/cli init --nextjs my-collie-next-app
 ```
 
 ### Manual Setup — Vite
 
-1. Install the Vite plugin:
+1. Install the Vite plugin and runtime:
 
 ```bash
 pnpm add -D @collie-lang/vite
+pnpm add @collie-lang/react
 ```
 
 2. Enable it in `vite.config.ts`:
@@ -131,53 +142,28 @@ export default defineConfig({
 })
 ```
 
-3. Import `.collie` files anywhere in your app.
+3. Create a Collie file with template IDs (multi-template example):
+
+```collie
+#id app.hero
+div.hero
+  h1 {{ name }}
+
+#id app.cta
+button.primary {{ label }}
+```
+
+4. Render templates via the registry runtime:
 
 ```tsx
-import Welcome from './components/Welcome.collie'
+import { Collie } from '@collie-lang/react'
 
 export default function App() {
-  return (
-    <>
-      <Welcome name="Josh" isMember={true} />
-    </>
-  )
+  return <Collie id="app.hero" name="Josh" />
 }
 ```
 
-### Manual Setup — Next.js
-
-1. Install the Next.js plugin (and the underlying loader):
-
-```bash
-pnpm add -D @collie-lang/next @collie-lang/webpack
-```
-
-2. Wrap your Next.js config:
-
-```js
-// next.config.js
-const { withCollie } = require('@collie-lang/next');
-
-module.exports = withCollie({
-  reactStrictMode: true,
-});
-```
-
-3. Add `collie.d.ts` so TypeScript understands `.collie` imports:
-
-```ts
-// src/collie.d.ts
-declare module '*.collie' {
-  import type { ComponentType } from 'react';
-  const Component: ComponentType<Record<string, unknown>>;
-  export default Component;
-}
-```
-
-4. Import `.collie` files in either the App Router or Pages Router.
-
----
+Templates are discovered automatically by `@collie-lang/vite`.
 
 ## 🛠️ Core Technologies
 
@@ -197,10 +183,9 @@ The compiler is intended to be:
 
 ### **Vite Plugin (`@collie-lang/vite`)**
 
-* On-demand `.collie` → JSX transforms
+* Build-time registry generation
+* Virtual template modules that export `render(props)`
 * Sourcemaps for accurate file/line tracking
-* Fast mode (no formatting) for dev server
-* Full printer mode for production builds
 
 ### **CLI (`@collie-lang/cli`)**
 
@@ -209,6 +194,8 @@ Commands include:
 ```
 collie build        Compile an entire template directory
 collie check        Validate Collie files without generating output
+collie ids          List template ids and their locations
+collie explain      Show the file + location for a template id
 collie format       Format .collie files using the printer
 collie watch        Recompile on file changes
 ```
@@ -220,7 +207,6 @@ TODO: Add links once documentation is live (`collie-lang.org/cli`).
 ## 🧪 Examples
 
 - [`examples/vite-react-ts`](examples/vite-react-ts) – starter Vite + React + TS project
-- [`examples/nextjs-app-router`](examples/nextjs-app-router) – fully configured Next.js 14 App Router project that consumes Collie components
 
 Additional guides live under [`docs/`](docs), including a [framework migration guide](docs/migration.md).
 
@@ -229,6 +215,8 @@ Additional guides live under [`docs/`](docs), including a [framework migration g
 ## 🧬 Language Overview
 
 Collie is opinionated but not restrictive:
+
+All full templates must start with a `#id` block; snippets below omit it for brevity.
 
 ### **Blocks**
 

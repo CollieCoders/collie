@@ -1,5 +1,81 @@
 # @collie-lang/cli
 
+## [Unreleased]
+
+### Removed
+
+- Dropped Next.js/webpack scaffolding and templates to focus the MVP on Vite.
+- Removed dependencies on `@collie-lang/next` and `@collie-lang/webpack`.
+
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@1.2.0
+  - @collie-lang/webpack@1.2.0
+  - @collie-lang/config@1.2.0
+  - @collie-lang/next@1.2.0
+  - @collie-lang/vite@1.2.0
+
+## 5.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+  - @collie-lang/webpack@7.0.0
+  - @collie-lang/config@3.0.0
+  - @collie-lang/next@4.0.0
+  - @collie-lang/vite@4.0.0
+
+## 4.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@7.0.0
+  - @collie-lang/webpack@6.0.0
+  - @collie-lang/config@2.0.0
+  - @collie-lang/next@3.0.0
+  - @collie-lang/vite@3.0.0
+
+## 3.0.1
+
+### Patch Changes
+
+- Version 5
+- Updated dependencies
+  - @collie-lang/compiler@6.0.1
+  - @collie-lang/webpack@5.0.1
+  - @collie-lang/config@1.0.1
+  - @collie-lang/next@2.0.1
+  - @collie-lang/vite@2.0.1
+
+## 3.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/compiler@6.0.0
+  - @collie-lang/next@2.0.0
+
 ## 2.0.1
 
 ### Patch Changes

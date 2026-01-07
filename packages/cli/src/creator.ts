@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 
 export interface CreateOptions {
@@ -29,14 +28,6 @@ const TEMPLATE_MAP: Record<string, TemplateMeta> = {
       ts: "vite-react-ts",
       js: "vite-react-js"
     }
-  },
-  "nextjs-app-router": {
-    label: "Next.js App Router",
-    description: "Next.js 14 App Router starter wired with @collie-lang/next",
-    variants: {
-      ts: "nextjs-app-router-ts",
-      js: "nextjs-app-router-js"
-    }
   }
 };
 
@@ -51,11 +42,7 @@ interface ResolvedOptions {
   noGit: boolean;
 }
 
-const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {
-  next: { template: "nextjs-app-router" },
-  nextjs: { template: "nextjs-app-router", forcedTypescript: true },
-  "nextjs-app": { template: "nextjs-app-router", forcedTypescript: true }
-};
+const TEMPLATE_ALIASES: Record<string, { template: TemplateKey; forcedTypescript?: boolean }> = {};
 
 export function formatTemplateList(): string {
   return Object.entries(TEMPLATE_MAP)
@@ -256,7 +243,8 @@ async function confirmOverwrite(projectName: string): Promise<boolean> {
 function getTemplateDir(template: TemplateKey, typescript: boolean): string {
   const meta = TEMPLATE_MAP[template];
   const variant = typescript ? meta.variants.ts : meta.variants.js;
-  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "templates", variant);
+  // Use __dirname in compiled CJS output to locate templates directory
+  const dir = path.resolve(__dirname, "..", "templates", variant);
 
   if (!existsSync(dir)) {
     throw new Error(

@@ -1,5 +1,57 @@
 # @collie-lang/vite
 
+## 1.2.0
+
+### Minor Changes
+
+- Got peer deps working
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@1.2.0
+
+## 4.0.0
+
+### Major Changes
+
+- Parse fix
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@8.0.0
+
+## 3.0.0
+
+### Major Changes
+
+- Updated vite
+
+### Patch Changes
+
+- Updated dependencies
+  - @collie-lang/compiler@7.0.0
+
+## 2.0.1
+
+### Patch Changes
+
+- Version 5
+- Updated dependencies
+  - @collie-lang/compiler@6.0.1
+
+## 2.0.0
+
+### Major Changes
+
+- 7efa70c: Updated compiler and CLI
+
+### Patch Changes
+
+- Updated dependencies [7efa70c]
+  - @collie-lang/compiler@6.0.0
+
 ## 1.0.3
 
 ### Patch Changes

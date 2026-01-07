@@ -11,6 +11,9 @@ coverage/
 !.env.example
 !.env.*.example
 
+# local tarball testing
+.local-packs/
+
 # examples
 examples/*/node_modules
 examples/*/dist
@@ -18,6 +21,11 @@ examples/*/.vite
 
 # changesets
 .changeset/pre.json
+
+# package artifacts
+packages/vite/node_modules
+packages/vite/dist
+*.tgz
 
 packages/cli/templates
 
