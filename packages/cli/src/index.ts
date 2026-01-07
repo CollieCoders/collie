@@ -78,8 +78,7 @@ const COLLIE_DEPENDENCIES = [COLLIE_COMPILER_DEPENDENCY, COLLIE_VITE_DEPENDENCY]
 const COLLIE_CORE_PACKAGES = ["@collie-lang/compiler", "@collie-lang/config"] as const;
 const COLLIE_VITE_PACKAGES = [
   ...COLLIE_CORE_PACKAGES,
-  "@collie-lang/vite",
-  "@collie-lang/html-runtime"
+  "@collie-lang/vite"
 ] as const;
 const PROMPT_OPTIONS = {
   onCancel: () => {
