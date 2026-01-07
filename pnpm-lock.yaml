@@ -37,10 +37,10 @@ importers:
   packages/cli:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.2.0
+        specifier: ^1.2.1
         version: link:../compiler
       '@collie-lang/config':
-        specifier: ^1.2.0
+        specifier: ^1.2.1
         version: link:../config
       '@collie-lang/vite':
         specifier: ^1.2.1
@@ -98,7 +98,7 @@ importers:
   packages/compiler:
     dependencies:
       '@collie-lang/config':
-        specifier: ^1.2.0
+        specifier: ^1.2.1
         version: link:../config
       typescript:
         specifier: ^5.7.2
@@ -133,7 +133,7 @@ importers:
   packages/vite:
     dependencies:
       '@collie-lang/compiler':
-        specifier: ^1.2.0
+        specifier: ^1.2.1
         version: link:../compiler
       fast-glob:
         specifier: ^3.3.3

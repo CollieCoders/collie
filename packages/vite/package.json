@@ -32,7 +32,7 @@
     "lint": "echo \"(mvp) no lint configured\""
   },
   "dependencies": {
-    "@collie-lang/compiler": "^1.2.0",
+    "@collie-lang/compiler": "^1.2.1",
     "fast-glob": "^3.3.3"
   },
   "peerDependencies": {

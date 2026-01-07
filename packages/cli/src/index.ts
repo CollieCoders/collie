@@ -724,9 +724,7 @@ async function runInit(options: InitOptions = {}): Promise<void> {
   }
 
   let viteConfigStatus: "patched" | "already-configured" | "manual" | "not-found" | "skipped" = "skipped";
-  let viteConfigPath: string | null = null;
   if (framework === "vite") {
-    viteConfigPath = findViteConfigFile(projectRoot);
     if (viteConfigPath) {
       viteConfigStatus = await patchViteConfig(viteConfigPath);
     } else {
