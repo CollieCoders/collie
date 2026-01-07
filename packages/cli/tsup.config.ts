@@ -8,6 +8,7 @@ export default defineConfig({
   dts: {
     compilerOptions: {
       composite: false,
+      rootDir: path.resolve(__dirname, "../.."),
     },
   },
   sourcemap: true,

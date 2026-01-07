@@ -314,9 +314,9 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     }
 
     const document = parseCollie(source, { filename: filePath });
-    const errors = document.diagnostics.filter((diag) => diag.severity === "error");
+    const errors = document.diagnostics.filter((diag: Diagnostic) => diag.severity === "error");
     if (errors.length) {
-      const formatted = errors.map((diag) => formatDiagnostic(filePath, diag, root)).join("\n");
+      const formatted = errors.map((diag: Diagnostic) => formatDiagnostic(filePath, diag, root)).join("\n");
       reportHmrError(ctx, new Error(`[collie]\n${formatted}`));
       return [];
     }

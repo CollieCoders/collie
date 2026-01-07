@@ -15,6 +15,7 @@ export default defineConfig({
     tsconfig: path.resolve(__dirname, "tsconfig.json"),
     compilerOptions: {
       composite: false,
+      rootDir: path.resolve(__dirname, "../.."),
     },
   },
   sourcemap: true,
