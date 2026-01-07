@@ -398,11 +398,19 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       const exclude = Array.from(new Set([...prevExclude, "@collie-lang/react"]));
 
       const prevNoExternal = userConfig.ssr?.noExternal;
-      const nextNoExternal = Array.isArray(prevNoExternal)
-        ? Array.from(new Set([...prevNoExternal, "@collie-lang/react"]))
-        : prevNoExternal == null
-          ? ["@collie-lang/react"]
-          : undefined;
+
+      let nextNoExternal: any;
+      if (prevNoExternal === true) {
+        // User already wants everything bundled for SSR; nothing to do.
+        nextNoExternal = true;
+      } else if (Array.isArray(prevNoExternal)) {
+        nextNoExternal = Array.from(new Set([...prevNoExternal, "@collie-lang/react"]));
+      } else if (prevNoExternal == null) {
+        nextNoExternal = ["@collie-lang/react"];
+      } else {
+        // Vite allows string/RegExp/etc. Coerce to array and add ours.
+        nextNoExternal = Array.from(new Set([prevNoExternal, "@collie-lang/react"]));
+      }
 
       return {
         optimizeDeps: {
@@ -457,7 +465,6 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
       if (!isVirtualCollieId(cleanId) && cleanId.endsWith(".collie") && !isInternalImporter) {
         this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
-        return null;
       }
       return null;
     },
@@ -471,7 +478,6 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           this.error(err);
-          return null; // <-- TS: stop control-flow here
         }
 
         const entries = Array.from(templatesById.values()).sort((a, b) =>
@@ -500,7 +506,6 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           this.error(err);
-          return null; // <-- TS: stop control-flow here
         }
 
         const ids = Array.from(templatesById.keys()).sort((a, b) => a.localeCompare(b));
@@ -574,7 +579,6 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
         if (!isInternalImporter) {
           this.error(buildDirectImportError(cleanId, importer, resolvedConfig?.root));
-          return null; // <-- TS: stop control-flow here
         }
 
         return null;
