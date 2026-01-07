@@ -382,6 +382,31 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     name: "collie",
     enforce: "pre",
 
+    config(userConfig) {
+      const prevExclude = userConfig.optimizeDeps?.exclude ?? [];
+      const exclude = Array.from(new Set([...prevExclude, "@collie-lang/react"]));
+
+      const prevNoExternal = userConfig.ssr?.noExternal;
+      const nextNoExternal = Array.isArray(prevNoExternal)
+        ? Array.from(new Set([...prevNoExternal, "@collie-lang/react"]))
+        : prevNoExternal == null
+          ? ["@collie-lang/react"]
+          : undefined;
+
+      return {
+        optimizeDeps: {
+          exclude
+        },
+        ...(nextNoExternal
+          ? {
+              ssr: {
+                noExternal: nextNoExternal
+              }
+            }
+          : {})
+      };
+    },
+
     configResolved(config) {
       resolvedRuntime = options.jsxRuntime ?? "automatic";
       resolvedConfig = config;
