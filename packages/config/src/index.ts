@@ -6,11 +6,11 @@ import type {
   CollieConfig,
   CollieProjectConfig,
   NormalizedCollieConfig
-} from "./types";
-import { normalizeConfig } from "./normalize";
+} from "./types.ts";
+import { normalizeConfig } from "./normalize.ts";
 
-export * from "./types";
-export * from "./normalize";
+export * from "./types.ts";
+export * from "./normalize.ts";
 
 const DEFAULT_CONFIG_FILES = [
   "collie.config.ts",

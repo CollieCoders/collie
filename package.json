@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build": "pnpm -r --filter='@collie-lang/*' build",
+    "build": "pnpm run build:core",
+    "build:core": "pnpm --filter @collie-lang/config build && pnpm --filter @collie-lang/compiler build && pnpm --filter @collie-lang/vite build && pnpm --filter @collie-lang/cli build",
     "dev": "pnpm -r --parallel --filter='@collie-lang/*' dev",
     "clean": "pnpm -r clean && rimraf node_modules",
     "lint": "pnpm -r lint",

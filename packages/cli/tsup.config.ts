@@ -5,7 +5,11 @@ export default defineConfig({
   format: ["cjs"],
   platform: "node",
   target: "node18",
-  dts: true,
+  dts: {
+    compilerOptions: {
+      composite: false,
+    },
+  },
   sourcemap: true,
   clean: true,
   splitting: false,

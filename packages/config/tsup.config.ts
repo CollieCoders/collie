@@ -13,6 +13,9 @@ export default defineConfig({
   dts: {
     entry: ["src/index.ts"],
     tsconfig: path.resolve(__dirname, "tsconfig.json"),
+    compilerOptions: {
+      composite: false,
+    },
   },
 
   sourcemap: true,

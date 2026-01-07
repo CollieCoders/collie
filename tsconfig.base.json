@@ -2,14 +2,13 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "baseUrl": ".",
     "paths": {
       "@collie-lang/*": [
-        "packages/*/dist/index.d.ts",
-        "packages/*/dist/index.d.mts",
-        "packages/*/dist/index.d.cts"
+        "packages/*/src/index.ts",
+        "packages/*/src/index.tsx"
       ]
     },
     "strict": true,

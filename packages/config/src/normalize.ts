@@ -15,7 +15,7 @@ import type {
   NormalizedCollieDialectTokenRule,
   NormalizedCollieDialectTokens,
   NormalizedCollieProjectConfig
-} from "./types";
+} from "./types.ts";
 
 interface NormalizeOptions {
   cwd?: string;
