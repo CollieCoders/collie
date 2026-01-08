@@ -10,11 +10,11 @@ export interface ClassAliasesDecl {
   aliases: ClassAliasDecl[];
 }
 
-export type InputDeclKind = "value" | "callable";
+export type InputDeclKind = "value";
 
 export interface InputDecl {
   name: string;
-  kind: InputDeclKind;  // "callable" when declared as name()
+  kind: InputDeclKind;
   span?: SourceSpan;   // span for the decl (at least name)
 }
 

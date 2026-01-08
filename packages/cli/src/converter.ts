@@ -71,10 +71,10 @@ function normalizeConvertedCollie(collie: string, source: string, filename: stri
     const trimmed = rawLine.trimEnd();
 
     if (!inInputs) {
-      if (trimmed === "#props" || trimmed === "#inputs") {
+      if (trimmed === "#inputs") {
         inInputs = true;
         inputsIndent = indent;
-        inputsHeader = trimmed === "#props" ? rawLine.replace("#props", "#inputs") : rawLine;
+        inputsHeader = rawLine;
         inputLines = [];
         seenInputs = new Set<string>();
         i++;

@@ -1,5 +1,5 @@
-props
-  name: string
+#inputs
+  name
 
 div.welcome-card
   h1 Hello, {name}! 👋

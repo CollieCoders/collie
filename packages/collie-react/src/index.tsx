@@ -41,13 +41,13 @@ function normalizeRenderModule(mod: CollieTemplateModule | undefined, id: string
   throw new Error(`Collie template "${id}" did not export render(__inputs).`);
 }
 
-export function Collie(props: CollieProps) {
-  const { id, inputs, classes: _classes, fallback = null, children, ...rest } = props;
+export function Collie(allProps: CollieProps) {
+  const { id, inputs, classes: _classes, fallback = null, children, ...rest } = allProps;
   const [state, setState] = useState<LoadState>({ render: null, error: null });
 
   const loader = useMemo(() => registry[id], [id]);
 
-  // Normalize inputs: if `inputs` prop exists, use it; otherwise use remaining props (id/inputs/children stripped)
+  // Normalize inputs: if `inputs` exists, use it; otherwise use remaining inputs from rest props.
   const normalizedInputs = useMemo(() => {
     if (inputs !== undefined) {
       return inputs;

@@ -2447,26 +2447,13 @@ function parseInputDecl(
     pushDiag(
       diagnostics,
       "COLLIE104",
-      'Types are not supported in #inputs yet. Use "name" or "name()".',
+      'Types are not supported in #inputs yet. Use "name".',
       lineNumber,
       column,
       lineOffset,
       trimmed.length
     );
     return null;
-  }
-  
-  // Check for callable form: name()
-  const callableMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\(\)$/);
-  if (callableMatch) {
-    const name = callableMatch[1];
-    const nameStart = line.indexOf(name);
-    const nameColumn = column + nameStart;
-    return {
-      name,
-      kind: "callable",
-      span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
-    };
   }
   
   // Check for value form: name
@@ -2486,7 +2473,7 @@ function parseInputDecl(
   pushDiag(
     diagnostics,
     "COLLIE105",
-    'Invalid #inputs declaration. Use "name" or "name()".',
+    'Invalid #inputs declaration. Use "name".',
     lineNumber,
     column,
     lineOffset,
