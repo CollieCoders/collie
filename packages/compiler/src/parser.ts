@@ -10,8 +10,8 @@ import type {
   ForNode,
   JSXPassthroughNode,
   Node,
-  PropDecl,
-  PropsField,
+  InputDecl,
+  InputsField,
   RootNode,
   SlotBlock,
   TextNode
@@ -19,7 +19,6 @@ import type {
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics.ts";
 import { enforceDialect } from "./dialect.ts";
-import { enforceProps, enforcePropAliases } from "./props.ts";
 
 export interface TemplateUnit {
   id: string;
@@ -294,7 +293,7 @@ function parseTemplateBlock(
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
-  let propsBlockLevel: number | null = null;
+  let inputsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
@@ -344,14 +343,14 @@ function parseTemplateBlock(
 
     let level = indent / 2;
 
-    if (propsBlockLevel !== null && level <= propsBlockLevel) {
-      propsBlockLevel = null;
+    if (inputsBlockLevel !== null && level <= inputsBlockLevel) {
+      inputsBlockLevel = null;
     }
     if (classesBlockLevel !== null && level <= classesBlockLevel) {
       classesBlockLevel = null;
     }
 
-    const isInPropsBlock = propsBlockLevel !== null && level > propsBlockLevel;
+    const isInInputsBlock = inputsBlockLevel !== null && level > inputsBlockLevel;
     const isInClassesBlock = classesBlockLevel !== null && level > classesBlockLevel;
 
     while (stack.length > 1 && stack[stack.length - 1].level >= level) {
@@ -412,45 +411,61 @@ function parseTemplateBlock(
       pushDiag(
         diagnostics,
         "COLLIE103",
-        "`props` must be declared using `#props`.",
+        "`props` is not supported. Use `#inputs` instead.",
         lineNumber,
         indent + 1,
         lineOffset,
         trimmed.length
       );
       if (level === 0) {
-        propsBlockLevel = level;
+        inputsBlockLevel = level;
       }
       continue;
     }
 
     if (trimmed === "#props") {
+      pushDiag(
+        diagnostics,
+        "COLLIE103",
+        "`#props` is not supported. Use `#inputs` instead.",
+        lineNumber,
+        indent + 1,
+        lineOffset,
+        trimmed.length
+      );
+      if (level === 0) {
+        inputsBlockLevel = level;
+      }
+      continue;
+    }
+
+    if (trimmed === "#inputs") {
       if (level !== 0) {
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "#props block must be at the top level.",
+          "#inputs block must be at the top level.",
           lineNumber,
           indent + 1,
           lineOffset,
           trimmed.length
         );
-      } else if (root.props) {
+      } else if (root.inputs) {
         pushDiag(
           diagnostics,
           "COLLIE101",
-          "Only one #props block is allowed per #id.",
+          "Only one #inputs block is allowed per #id.",
           lineNumber,
           indent + 1,
           lineOffset,
           trimmed.length
         );
       } else {
-        root.props = { fields: [] };
-        root.propsDecls = [];
+        root.inputs = { fields: [] };
+        root.inputsDecls = [];
       }
       if (level === 0) {
-        propsBlockLevel = level;
+        inputsBlockLevel = level;
       }
       continue;
     }
@@ -492,12 +507,12 @@ function parseTemplateBlock(
       continue;
     }
 
-    if (propsBlockLevel !== null && level > propsBlockLevel) {
-      if (level !== propsBlockLevel + 1) {
+    if (inputsBlockLevel !== null && level > inputsBlockLevel) {
+      if (level !== inputsBlockLevel + 1) {
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "#props lines must be indented two spaces under the #props header.",
+          "#inputs lines must be indented two spaces under the #inputs header.",
           lineNumber,
           indent + 1,
           lineOffset
@@ -505,22 +520,22 @@ function parseTemplateBlock(
         continue;
       }
 
-      const decl = parsePropDecl(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
-      if (decl && root.propsDecls) {
+      const decl = parseInputDecl(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (decl && root.inputsDecls) {
         // Check for duplicates
-        const existing = root.propsDecls.find((d) => d.name === decl.name);
+        const existing = root.inputsDecls.find((d) => d.name === decl.name);
         if (existing) {
           pushDiag(
             diagnostics,
             "COLLIE106",
-            `Duplicate prop declaration "${decl.name}".`,
+            `Duplicate input declaration "${decl.name}".`,
             lineNumber,
             indent + 1,
             lineOffset,
             trimmed.length
           );
         } else {
-          root.propsDecls.push(decl);
+          root.inputsDecls.push(decl);
         }
       }
       continue;
@@ -973,11 +988,7 @@ function parseTemplateBlock(
 
   if (options.dialect) {
     diagnostics.push(...enforceDialect(root, options.dialect));
-    diagnostics.push(...enforceProps(root, options.dialect.props));
   }
-  
-  // Enforce #props alias diagnostics (only when #props exists)
-  diagnostics.push(...enforcePropAliases(root));
 
   return { root, diagnostics };
 }
@@ -2496,13 +2507,13 @@ function parseAndAddAttribute(
   }
 }
 
-function parsePropDecl(
+function parseInputDecl(
   line: string,
   lineNumber: number,
   column: number,
   lineOffset: number,
   diagnostics: Diagnostic[]
-): PropDecl | null {
+): InputDecl | null {
   const trimmed = line.trim();
   
   // Check for type hints (not allowed)
@@ -2510,7 +2521,7 @@ function parsePropDecl(
     pushDiag(
       diagnostics,
       "COLLIE104",
-      'Types are not supported in #props yet. Use "name" or "name()".',
+      'Types are not supported in #inputs yet. Use "name" or "name()".',
       lineNumber,
       column,
       lineOffset,
@@ -2549,7 +2560,7 @@ function parsePropDecl(
   pushDiag(
     diagnostics,
     "COLLIE105",
-    'Invalid #props declaration. Use "name" or "name()".',
+    'Invalid #inputs declaration. Use "name" or "name()".',
     lineNumber,
     column,
     lineOffset,

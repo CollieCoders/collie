@@ -1,34 +1,33 @@
-import type { PropDeclKind } from "./ast.ts";
+import type { InputDeclKind } from "./ast.ts";
 
 /**
- * Template environment for tracking prop aliases and local variables during code generation.
+ * Template environment for tracking inputs and local variables during code generation.
  * 
  * This is a pure data structure with no hidden state or side effects.
- * It is created once per template and passed through the rewriting process
- * to enable deterministic identifier resolution.
+ * It is created once per template and passed through expression processing.
  * 
- * - propAliases: Map of prop names declared in #props to their kind (value or callable)
+ * - inputNames: Set of input names declared in #inputs
  * - localsStack: Stack of local variable scopes (e.g., @for loop variables)
  */
 export interface TemplateEnv {
-  propAliases: Map<string, PropDeclKind>;
+  inputNames: Set<string>;
   localsStack: Array<Set<string>>;
 }
 
 /**
- * Create a new TemplateEnv from prop declarations.
+ * Create a new TemplateEnv from input declarations.
  */
 export function createTemplateEnv(
-  propsDecls?: Array<{ name: string; kind: PropDeclKind }>
+  inputsDecls?: Array<{ name: string; kind: InputDeclKind }>
 ): TemplateEnv {
-  const propAliases = new Map<string, PropDeclKind>();
-  if (propsDecls) {
-    for (const decl of propsDecls) {
-      propAliases.set(decl.name, decl.kind);
+  const inputNames = new Set<string>();
+  if (inputsDecls) {
+    for (const decl of inputsDecls) {
+      inputNames.add(decl.name);
     }
   }
   return {
-    propAliases,
+    inputNames,
     localsStack: []
   };
 }
@@ -52,7 +51,7 @@ export function popLocals(env: TemplateEnv): void {
 
 /**
  * Check if a name is a local variable in the current scope.
- * Locals shadow prop aliases.
+ * Locals shadow inputs.
  */
 export function isLocal(env: TemplateEnv, name: string): boolean {
   for (let i = env.localsStack.length - 1; i >= 0; i--) {
@@ -64,26 +63,23 @@ export function isLocal(env: TemplateEnv, name: string): boolean {
 }
 
 /**
- * Check if a name is a prop alias declared in #props.
- * Returns true only if it's in propAliases and not shadowed by a local.
+ * Check if a name is an input declared in #inputs.
+ * Returns true only if it's in inputNames and not shadowed by a local.
  */
-export function isPropAlias(env: TemplateEnv, name: string): boolean {
+export function isInput(env: TemplateEnv, name: string): boolean {
   if (isLocal(env, name)) {
     return false;
   }
-  return env.propAliases.has(name);
+  return env.inputNames.has(name);
 }
 
 /**
- * Result of expression rewriting with usage metadata for diagnostics.
+ * Result of expression processing with usage metadata for diagnostics.
  */
 export interface RewriteResult {
-  code: string;                      // rewritten expression
+  code: string;                      // processed expression (unchanged from input)
   usedBare: Set<string>;             // bare identifiers encountered
-  usedPropsDot: Set<string>;         // props.<name> occurrences encountered
   callSitesBare: Set<string>;        // bare identifiers used as calls: name(...)
-  callSitesPropsDot: Set<string>;    // props.name(...) occurrences
-  rewrittenAliases: Set<string>;     // prop aliases rewritten to props.<name>
 }
 
 const IGNORED_IDENTIFIERS = new Set([
@@ -93,8 +89,7 @@ const IGNORED_IDENTIFIERS = new Set([
   "false",
   "NaN",
   "Infinity",
-  "this",
-  "props"
+  "this"
 ]);
 
 const RESERVED_KEYWORDS = new Set([
@@ -140,27 +135,22 @@ const RESERVED_KEYWORDS = new Set([
 ]);
 
 /**
- * Rewrite expression, converting bare prop aliases to props.<name>.
- * Returns rewritten code plus metadata about identifier usage for diagnostics.
+ * Process expression WITHOUT rewriting identifiers.
+ * Returns the original code unchanged, plus metadata about identifier usage for diagnostics.
  * 
  * This function is PURE and does not mutate the AST or environment.
- * The output is deterministic TSX with explicit props.<name> references,
- * making it suitable for future Collie → TSX conversion tooling.
+ * Identifiers remain as bare names - JavaScript scoping rules apply naturally.
  * 
  * @param expression - The original expression string from the template
- * @param env - Template environment with prop aliases and locals
- * @returns RewriteResult with rewritten code and usage metadata
+ * @param env - Template environment with inputs and locals
+ * @returns RewriteResult with original code and usage metadata
  */
 export function rewriteExpression(expression: string, env: TemplateEnv): RewriteResult {
   let i = 0;
   let state: "code" | "single" | "double" | "template" | "line" | "block" = "code";
-  let output = "";
   
   const usedBare = new Set<string>();
-  const usedPropsDot = new Set<string>();
   const callSitesBare = new Set<string>();
-  const callSitesPropsDot = new Set<string>();
-  const rewrittenAliases = new Set<string>();
 
   while (i < expression.length) {
     const ch = expression[i];
@@ -168,25 +158,21 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     if (state === "code") {
       if (ch === "'" || ch === "\"") {
         state = ch === "'" ? "single" : "double";
-        output += ch;
         i++;
         continue;
       }
       if (ch === "`") {
         state = "template";
-        output += ch;
         i++;
         continue;
       }
       if (ch === "/" && expression[i + 1] === "/") {
         state = "line";
-        output += ch;
         i++;
         continue;
       }
       if (ch === "/" && expression[i + 1] === "*") {
         state = "block";
-        output += ch;
         i++;
         continue;
       }
@@ -203,57 +189,28 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
         const isObjectKey = nextNonSpace === ":" && (prevNonSpace === "{" || prevNonSpace === ",");
         const isCall = nextNonSpace === "(";
 
-        // Track props.<name> usage
-        if (prevNonSpace === "." && start >= 2) {
-          const propsStart = findPreviousIdentifierStart(expression, start - 2);
-          if (propsStart !== null) {
-            const possibleProps = expression.slice(propsStart, start - 1).trim();
-            if (possibleProps === "props") {
-              usedPropsDot.add(name);
-              if (isCall) {
-                callSitesPropsDot.add(name);
-              }
-            }
-          }
-        }
-
         if (
           isMemberAccess ||
           isObjectKey ||
           isLocal(env, name) ||
           shouldIgnoreIdentifier(name)
         ) {
-          output += name;
           continue;
         }
 
-        // Check if this identifier is a prop alias
-        if (isPropAlias(env, name)) {
-          // Rewrite to props.<name>
-          output += `props.${name}`;
-          rewrittenAliases.add(name);
-          if (isCall) {
-            callSitesBare.add(name);
-          }
-          continue;
-        }
-
-        // Not a prop alias, track as bare identifier
+        // Track bare identifier usage
         usedBare.add(name);
         if (isCall) {
           callSitesBare.add(name);
         }
-        output += name;
         continue;
       }
 
-      output += ch;
       i++;
       continue;
     }
 
     if (state === "line") {
-      output += ch;
       if (ch === "\n") {
         state = "code";
       }
@@ -262,9 +219,7 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
 
     if (state === "block") {
-      output += ch;
       if (ch === "*" && expression[i + 1] === "/") {
-        output += "/";
         i += 2;
         state = "code";
         continue;
@@ -274,10 +229,8 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
 
     if (state === "single") {
-      output += ch;
       if (ch === "\\") {
         if (i + 1 < expression.length) {
-          output += expression[i + 1];
           i += 2;
           continue;
         }
@@ -290,10 +243,8 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
 
     if (state === "double") {
-      output += ch;
       if (ch === "\\") {
         if (i + 1 < expression.length) {
-          output += expression[i + 1];
           i += 2;
           continue;
         }
@@ -306,10 +257,8 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
 
     if (state === "template") {
-      output += ch;
       if (ch === "\\") {
         if (i + 1 < expression.length) {
-          output += expression[i + 1];
           i += 2;
           continue;
         }
@@ -322,55 +271,45 @@ export function rewriteExpression(expression: string, env: TemplateEnv): Rewrite
     }
   }
 
-  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot, rewrittenAliases };
+  return { code: expression, usedBare, callSitesBare };
 }
 
 /**
- * Rewrite JSX expression containing embedded braces.
+ * Process JSX expression containing embedded braces WITHOUT rewriting.
  * 
  * This function is PURE and does not mutate the AST or environment.
- * Recursively processes expressions within braces, maintaining deterministic output.
+ * Recursively processes expressions within braces, maintaining original code.
  * 
  * @param expression - The JSX expression string with potential {...} sections
- * @param env - Template environment with prop aliases and locals
- * @returns RewriteResult with rewritten code and aggregated usage metadata
+ * @param env - Template environment with inputs and locals
+ * @returns RewriteResult with original code and aggregated usage metadata
  */
 export function rewriteJsxExpression(expression: string, env: TemplateEnv): RewriteResult {
-  let output = "";
   let i = 0;
   
   const usedBare = new Set<string>();
-  const usedPropsDot = new Set<string>();
   const callSitesBare = new Set<string>();
-  const callSitesPropsDot = new Set<string>();
-  const rewrittenAliases = new Set<string>();
 
   while (i < expression.length) {
     const ch = expression[i];
     if (ch === "{") {
       const braceResult = readBalancedBraces(expression, i + 1);
       if (!braceResult) {
-        output += expression.slice(i);
         break;
       }
       const result = rewriteExpression(braceResult.content, env);
-      output += `{${result.code}}`;
       
       // Merge metadata
       for (const name of result.usedBare) usedBare.add(name);
-      for (const name of result.usedPropsDot) usedPropsDot.add(name);
       for (const name of result.callSitesBare) callSitesBare.add(name);
-      for (const name of result.callSitesPropsDot) callSitesPropsDot.add(name);
-      for (const name of result.rewrittenAliases) rewrittenAliases.add(name);
       
       i = braceResult.endIndex + 1;
       continue;
     }
-    output += ch;
     i++;
   }
 
-  return { code: output, usedBare, usedPropsDot, callSitesBare, callSitesPropsDot, rewrittenAliases };
+  return { code: expression, usedBare, callSitesBare };
 }
 
 function readBalancedBraces(
@@ -493,26 +432,6 @@ function findNextNonSpace(text: string, index: number): string | null {
     }
   }
   return null;
-}
-
-function findPreviousIdentifierStart(text: string, index: number): number | null {
-  // Skip backwards over whitespace
-  let i = index;
-  while (i >= 0 && /\s/.test(text[i])) {
-    i--;
-  }
-  if (i < 0) return null;
-  
-  // Now we should be at the end of an identifier, walk back to find its start
-  if (!isIdentifierPart(text[i])) {
-    return null;
-  }
-  
-  while (i > 0 && isIdentifierPart(text[i - 1])) {
-    i--;
-  }
-  
-  return i;
 }
 
 function isIdentifierStart(ch: string): boolean {

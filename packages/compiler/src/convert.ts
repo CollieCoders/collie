@@ -9,7 +9,7 @@ export interface ConvertTsxResult {
   warnings: string[];
 }
 
-interface PropField {
+interface InputField {
   name: string;
   optional: boolean;
   typeText: string;
@@ -17,8 +17,8 @@ interface PropField {
 
 interface ComponentInfo {
   jsxRoot: ts.JsxChild;
-  propsTypeName?: string;
-  inlineProps?: PropField[];
+  inputsTypeName?: string;
+  inlineInputs?: InputField[];
   defaults: Map<string, string>;
 }
 
@@ -38,21 +38,21 @@ export function convertTsxToCollie(source: string, options: ConvertTsxOptions = 
   );
   const warnings: string[] = [];
   const ctx: ConverterContext = { sourceFile, warnings };
-  const propDeclarations = collectPropDeclarations(sourceFile);
-  const component = findComponentInfo(sourceFile, propDeclarations, ctx);
+  const inputDeclarations = collectInputDeclarations(sourceFile);
+  const component = findComponentInfo(sourceFile, inputDeclarations, ctx);
   if (!component) {
     throw new Error("Could not find a component that returns JSX in this file.");
   }
 
-  const propsLines = buildPropsBlock(component, propDeclarations, ctx);
+  const inputsLines = buildInputsBlock(component, inputDeclarations, ctx);
   const templateLines = convertJsxNode(component.jsxRoot, ctx, 0);
   if (!templateLines.length) {
     throw new Error("Unable to convert JSX tree to Collie template.");
   }
 
   const sections: string[] = [];
-  if (propsLines.length) {
-    sections.push(propsLines.join("\n"));
+  if (inputsLines.length) {
+    sections.push(inputsLines.join("\n"));
   }
   sections.push(templateLines.join("\n"));
 
@@ -69,20 +69,20 @@ function inferScriptKind(filename: string): ts.ScriptKind {
   return ts.ScriptKind.JS;
 }
 
-function collectPropDeclarations(sourceFile: ts.SourceFile): Map<string, PropField[]> {
-  const map = new Map<string, PropField[]>();
+function collectInputDeclarations(sourceFile: ts.SourceFile): Map<string, InputField[]> {
+  const map = new Map<string, InputField[]>();
   for (const statement of sourceFile.statements) {
     if (ts.isInterfaceDeclaration(statement) && statement.name) {
-      map.set(statement.name.text, extractPropsFromMembers(statement.members, sourceFile));
+      map.set(statement.name.text, extractInputsFromMembers(statement.members, sourceFile));
     } else if (ts.isTypeAliasDeclaration(statement) && ts.isTypeLiteralNode(statement.type)) {
-      map.set(statement.name.text, extractPropsFromMembers(statement.type.members, sourceFile));
+      map.set(statement.name.text, extractInputsFromMembers(statement.type.members, sourceFile));
     }
   }
   return map;
 }
 
-function extractPropsFromMembers(members: readonly ts.TypeElement[], sourceFile: ts.SourceFile): PropField[] {
-  const fields: PropField[] = [];
+function extractInputsFromMembers(members: readonly ts.TypeElement[], sourceFile: ts.SourceFile): InputField[] {
+  const fields: InputField[] = [];
   for (const member of members) {
     if (!ts.isPropertySignature(member) || member.name === undefined) {
       continue;
@@ -103,7 +103,7 @@ function extractPropsFromMembers(members: readonly ts.TypeElement[], sourceFile:
 
 function findComponentInfo(
   sourceFile: ts.SourceFile,
-  declarations: Map<string, PropField[]>,
+  declarations: Map<string, InputField[]>,
   ctx: ConverterContext
 ): ComponentInfo | null {
   for (const statement of sourceFile.statements) {
@@ -111,11 +111,11 @@ function findComponentInfo(
       const jsx = findJsxReturn(statement.body);
       if (jsx) {
         const defaults = extractDefaultsFromParameters(statement.parameters, ctx);
-        const propsInfo = resolvePropsFromParameters(statement.parameters, declarations, ctx);
+        const inputsInfo = resolveInputsFromParameters(statement.parameters, declarations, ctx);
         return {
           jsxRoot: jsx,
-          propsTypeName: propsInfo.typeName,
-          inlineProps: propsInfo.inline,
+          inputsTypeName: inputsInfo.typeName,
+          inlineInputs: inputsInfo.inline,
           defaults
         };
       }
@@ -129,20 +129,20 @@ function findComponentInfo(
             continue;
           }
           const defaults = extractDefaultsFromParameters(init.parameters, ctx);
-          const propsInfo = resolvePropsFromParameters(init.parameters, declarations, ctx);
-          if (!propsInfo.typeName && !propsInfo.inline && decl.type) {
-            const inferred = resolvePropsFromTypeAnnotation(decl.type, sourceFile, declarations);
-            if (inferred.typeName && !propsInfo.typeName) {
-              propsInfo.typeName = inferred.typeName;
+          const inputsInfo = resolveInputsFromParameters(init.parameters, declarations, ctx);
+          if (!inputsInfo.typeName && !inputsInfo.inline && decl.type) {
+            const inferred = resolveInputsFromTypeAnnotation(decl.type, sourceFile, declarations);
+            if (inferred.typeName && !inputsInfo.typeName) {
+              inputsInfo.typeName = inferred.typeName;
             }
-            if (inferred.inline && !propsInfo.inline) {
-              propsInfo.inline = inferred.inline;
+            if (inferred.inline && !inputsInfo.inline) {
+              inputsInfo.inline = inferred.inline;
             }
           }
           return {
             jsxRoot: jsx,
-            propsTypeName: propsInfo.typeName,
-            inlineProps: propsInfo.inline,
+            inputsTypeName: inputsInfo.typeName,
+            inlineInputs: inputsInfo.inline,
             defaults
           };
         }
@@ -152,17 +152,17 @@ function findComponentInfo(
   return null;
 }
 
-function resolvePropsFromParameters(
+function resolveInputsFromParameters(
   parameters: readonly ts.ParameterDeclaration[],
-  declarations: Map<string, PropField[]>,
+  declarations: Map<string, InputField[]>,
   ctx: ConverterContext
-): { typeName?: string; inline?: PropField[] } {
+): { typeName?: string; inline?: InputField[] } {
   if (!parameters.length) {
     return {};
   }
   const param = parameters[0];
   if (param.type) {
-    const inferred = resolvePropsFromTypeAnnotation(param.type, ctx.sourceFile, declarations);
+    const inferred = resolveInputsFromTypeAnnotation(param.type, ctx.sourceFile, declarations);
     if (inferred.inline) {
       return inferred;
     }
@@ -173,11 +173,11 @@ function resolvePropsFromParameters(
   return {};
 }
 
-function resolvePropsFromTypeAnnotation(
+function resolveInputsFromTypeAnnotation(
   typeNode: ts.TypeNode,
   sourceFile: ts.SourceFile,
-  declarations: Map<string, PropField[]>
-): { typeName?: string; inline?: PropField[] } {
+  declarations: Map<string, InputField[]>
+): { typeName?: string; inline?: InputField[] } {
   if (ts.isTypeReferenceNode(typeNode)) {
     const referenced = getTypeReferenceName(typeNode.typeName);
     if (referenced && declarations.has(referenced)) {
@@ -191,12 +191,12 @@ function resolvePropsFromTypeAnnotation(
           return { typeName: nested };
         }
       } else if (ts.isTypeLiteralNode(typeArg)) {
-        return { inline: extractPropsFromMembers(typeArg.members, sourceFile) };
+        return { inline: extractInputsFromMembers(typeArg.members, sourceFile) };
       }
     }
   }
   if (ts.isTypeLiteralNode(typeNode)) {
-    return { inline: extractPropsFromMembers(typeNode.members, sourceFile) };
+    return { inline: extractInputsFromMembers(typeNode.members, sourceFile) };
   }
   return {};
 }
@@ -260,17 +260,17 @@ function extractDefaultsFromParameters(
     if (!element.initializer) {
       continue;
     }
-    const propName = getBindingElementPropName(element, ctx.sourceFile);
-    if (!propName) {
+    const inputName = getBindingElementInputName(element, ctx.sourceFile);
+    if (!inputName) {
       ctx.warnings.push("Skipping complex destructured default value.");
       continue;
     }
-    defaults.set(propName, element.initializer.getText(ctx.sourceFile).trim());
+    defaults.set(inputName, element.initializer.getText(ctx.sourceFile).trim());
   }
   return defaults;
 }
 
-function getBindingElementPropName(element: ts.BindingElement, sourceFile: ts.SourceFile): string | undefined {
+function getBindingElementInputName(element: ts.BindingElement, sourceFile: ts.SourceFile): string | undefined {
   const prop = element.propertyName;
   if (prop) {
     if (ts.isIdentifier(prop) || ts.isStringLiteral(prop) || ts.isNumericLiteral(prop)) {
@@ -294,32 +294,34 @@ function getPropertyName(name: ts.PropertyName, sourceFile: ts.SourceFile): stri
   return name.getText(sourceFile);
 }
 
-function buildPropsBlock(
+function buildInputsBlock(
   info: ComponentInfo,
-  propDeclarations: Map<string, PropField[]>,
+  inputDeclarations: Map<string, InputField[]>,
   ctx: ConverterContext
 ): string[] {
   const fields =
-    info.inlineProps ??
-    (info.propsTypeName ? propDeclarations.get(info.propsTypeName) ?? [] : undefined) ??
+    info.inlineInputs ??
+    (info.inputsTypeName ? inputDeclarations.get(info.inputsTypeName) ?? [] : undefined) ??
     [];
   if (!fields.length && !info.defaults.size) {
     return [];
   }
 
-  const lines = ["props"];
+  const lines = ["#inputs"];
   if (fields.length) {
     for (const field of fields) {
       const def = info.defaults.get(field.name);
-      let line = `  ${field.name}${field.optional ? "?" : ""}: ${field.typeText}`;
+      // Emit as bare identifier, not function call
+      let line = `  ${field.name}`;
       if (def) {
-        line += ` = ${def}`;
+        ctx.warnings.push(`Default value for "${field.name}" cannot be preserved in Collie #inputs.`);
       }
       lines.push(line);
     }
   } else {
     for (const [name, defValue] of info.defaults.entries()) {
-      lines.push(`  ${name}: any = ${defValue}`);
+      ctx.warnings.push(`Default value for "${name}" cannot be preserved in Collie #inputs.`);
+      lines.push(`  ${name}`);
     }
   }
   return lines;
