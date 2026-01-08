@@ -2447,7 +2447,7 @@ function parseInputDecl(
     pushDiag(
       diagnostics,
       "COLLIE104",
-      'Types are not supported in #inputs yet. Use "name".',
+      'Types are not supported in #inputs yet. Use "name" or "name()".',
       lineNumber,
       column,
       lineOffset,
@@ -2455,7 +2455,7 @@ function parseInputDecl(
     );
     return null;
   }
-  
+
   // Check for value form: name
   const valueMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
   if (valueMatch) {
@@ -2468,12 +2468,25 @@ function parseInputDecl(
       span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
     };
   }
+
+  // Check for function marker form: name()
+  const fnMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\(\)$/);
+  if (fnMatch) {
+    const name = fnMatch[1];
+    const nameStart = line.indexOf(name);
+    const nameColumn = column + nameStart;
+    return {
+      name,
+      kind: "fn",
+      span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
+    };
+  }
   
   // Invalid syntax
   pushDiag(
     diagnostics,
     "COLLIE105",
-    'Invalid #inputs declaration. Use "name".',
+    'Invalid #inputs declaration. Use "name" or "name()".',
     lineNumber,
     column,
     lineOffset,
