@@ -36,13 +36,13 @@ div.$viewContainer.flex
     ]
   },
   {
-    name: "merges multiple classes blocks around props",
+    name: "merges multiple classes blocks around inputs",
     source: `
 classes
   base = container.mx-auto
 
-props
-  user: User
+#inputs
+  user
 
 classes
   adminPanel = mt-4.bg-red-100
@@ -53,10 +53,10 @@ div.$base.$adminPanel.text-sm
     snippets: [`className="container mx-auto mt-4 bg-red-100 text-sm"`]
   },
   {
-    name: "allows props before classes",
+    name: "allows inputs before classes",
     source: `
-props
-  user: User
+#inputs
+  user
 
 classes
   badge = rounded-full.bg-slate-100

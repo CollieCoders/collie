@@ -493,7 +493,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
         return {
           code: [
-            "/** @type {Record<string, () => Promise<{ render: (props: any) => any }>>} */",
+            "/** @type {Record<string, () => Promise<{ render: (__inputs: any) => any }>>} */",
             `export const registry = {\n${lines.join("\n")}\n};`
           ].join("\n"),
           map: null

@@ -4,10 +4,12 @@ import type { ReactNode } from "react";
 import type { CollieRegistry, CollieTemplateModule } from "./registry.d.ts";
 import { registry } from "virtual:collie/registry";
 
-type RenderFn = (props: any) => any;
+type RenderFn = (__inputs: any) => any;
 
 export interface CollieProps extends Record<string, unknown> {
   id: string;
+  inputs?: Record<string, unknown>;
+  classes?: string | string[];
   fallback?: ReactNode;
 }
 
@@ -36,14 +38,22 @@ function normalizeRenderModule(mod: CollieTemplateModule | undefined, id: string
   if (mod && typeof mod.render === "function") {
     return mod.render;
   }
-  throw new Error(`Collie template "${id}" did not export render(props).`);
+  throw new Error(`Collie template "${id}" did not export render(__inputs).`);
 }
 
-export function Collie(props: CollieProps) {
-  const { id, fallback = null, ...rest } = props;
+export function Collie(allProps: CollieProps) {
+  const { id, inputs, classes: _classes, fallback = null, children, ...rest } = allProps;
   const [state, setState] = useState<LoadState>({ render: null, error: null });
 
   const loader = useMemo(() => registry[id], [id]);
+
+  // Normalize inputs: if `inputs` exists, use it; otherwise use remaining inputs from rest props.
+  const normalizedInputs = useMemo(() => {
+    if (inputs !== undefined) {
+      return inputs;
+    }
+    return rest;
+  }, [inputs, rest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +91,7 @@ export function Collie(props: CollieProps) {
     return <>{fallback ?? null}</>;
   }
 
-  return <>{state.render(rest)}</>;
+  return <>{state.render(normalizedInputs)}</>;
 }
 
 export type { CollieRegistry, CollieTemplateModule };

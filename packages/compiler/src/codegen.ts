@@ -8,12 +8,12 @@ import type {
   ForNode,
   JSXPassthroughNode,
   Node,
-  PropsDecl,
+  InputsDecl,
   RootNode,
   SlotBlock,
   TextNode
 } from "./ast.ts";
-import { createTemplateEnv, isLocal, isPropAlias, popLocals, pushLocals, rewriteExpression, rewriteJsxExpression, type TemplateEnv } from "./rewrite.ts";
+import { createTemplateEnv, isLocal, isInput, popLocals, pushLocals, rewriteExpression, rewriteJsxExpression, type TemplateEnv } from "./rewrite.ts";
 
 export interface RenderCodegenOptions {
   jsxRuntime: "automatic" | "classic";
@@ -21,18 +21,18 @@ export interface RenderCodegenOptions {
 }
 
 export function generateRenderModule(root: RootNode, options: RenderCodegenOptions): string {
-  const { prelude, propsType, propsDestructure, jsx, isTsx } = buildModuleParts(root, options);
-  const parts: string[] = [...prelude, propsType];
+  const { prelude, inputsType, inputsPrelude, jsx, isTsx } = buildModuleParts(root, options);
+  const parts: string[] = [...prelude, inputsType];
 
   if (!isTsx) {
-    parts.push(`/** @param {any} props */`);
+    parts.push(`/** @param {any} __inputs */`);
   }
 
   const functionLines = [
-    isTsx ? "export function render(props: any) {" : "export function render(props) {"
+    isTsx ? "export function render(__inputs: any) {" : "export function render(__inputs) {"
   ];
-  if (propsDestructure) {
-    functionLines.push(`  ${propsDestructure}`);
+  if (inputsPrelude) {
+    functionLines.push(`  ${inputsPrelude}`);
   }
   functionLines.push(`  return ${jsx};`, `}`);
   parts.push(functionLines.join("\n"));
@@ -42,8 +42,8 @@ export function generateRenderModule(root: RootNode, options: RenderCodegenOptio
 
 interface ModuleParts {
   prelude: string[];
-  propsType: string;
-  propsDestructure: string | null;
+  inputsType: string;
+  inputsPrelude: string | null;
   jsx: string;
   isTsx: boolean;
 }
@@ -57,12 +57,11 @@ function buildModuleParts(
 
   // Build environments for code generation (does not mutate AST)
   const aliasEnv = buildClassAliasEnvironment(root.classAliases);
-  const env = createTemplateEnv(root.propsDecls);
+  const env = createTemplateEnv(root.inputsDecls);
   
-  // Generate TSX output with explicit props.<name> for prop aliases
-  // This ensures deterministic output for future conversion tools
+  // Generate TSX output with bare identifiers for inputs
   const jsx = renderRootChildren(root.children, aliasEnv, env);
-  const propsDestructure = emitPropsDestructure(root.props);
+  const inputsPrelude = emitInputsPrelude(root.inputsDecls);
 
   const prelude: string[] = [];
 
@@ -75,10 +74,10 @@ function buildModuleParts(
     prelude.push(`import React from "react";`);
   }
 
-  // JS-safe typedef for Props (JSDoc)
-  const propsType = emitPropsType(root.props, flavor);
+  // JS-safe typedef for Inputs (JSDoc)
+  const inputsType = emitInputsType(root.inputs, flavor);
 
-  return { prelude, propsType, propsDestructure, jsx, isTsx };
+  return { prelude, inputsType, inputsPrelude, jsx, isTsx };
 }
 
 function buildClassAliasEnvironment(
@@ -185,8 +184,8 @@ function emitComponent(
   env: TemplateEnv
 ): string {
   const attrs = emitAttributes(node.attributes, aliasEnv, env);
-  const slotProps = emitSlotProps(node, aliasEnv, env);
-  const allAttrs = `${attrs}${slotProps}`;
+  const slotBindings = emitSlotBindings(node, aliasEnv, env);
+  const allAttrs = `${attrs}${slotBindings}`;
   const children = emitChildrenWithSpacing(node.children, aliasEnv, env);
   
   if (children.length > 0) {
@@ -245,7 +244,7 @@ function emitAttributes(
   }).join("");
 }
 
-function emitSlotProps(
+function emitSlotBindings(
   node: ComponentNode,
   aliasEnv: Map<string, readonly string[]>,
   env: TemplateEnv
@@ -429,52 +428,52 @@ function emitSingleNodeExpression(
   return emitNodeInJsx(node, aliasEnv, env);
 }
 
-function emitPropsType(props: PropsDecl | undefined, flavor: "jsx" | "tsx"): string {
+function emitInputsType(inputs: InputsDecl | undefined, flavor: "jsx" | "tsx"): string {
   if (flavor === "tsx") {
-    return emitTsPropsType(props);
+    return emitTsInputsType(inputs);
   }
-  return emitJsDocPropsType(props);
+  return emitJsDocInputsType(inputs);
 }
 
-function emitJsDocPropsType(props?: PropsDecl): string {
+function emitJsDocInputsType(inputs?: InputsDecl): string {
   // Emit JS-safe JSDoc typedef (Rollup can parse this, and TS tooling can read it).
-  if (!props) {
-    return "/** @typedef {any} Props */";
+  if (!inputs) {
+    return "/** @typedef {any} Inputs */";
   }
-  if (!props.fields.length) {
-    return "/** @typedef {{}} Props */";
+  if (!inputs.fields.length) {
+    return "/** @typedef {{}} Inputs */";
   }
 
   // Build an object type like: { foo: string; bar?: number }
-  const fields = props.fields
+  const fields = inputs.fields
     .map((field) => {
       const optional = field.optional ? "?" : "";
       return `${field.name}${optional}: ${field.typeText}`;
     })
     .join("; ");
 
-  return `/** @typedef {{ ${fields} }} Props */`;
+  return `/** @typedef {{ ${fields} }} Inputs */`;
 }
 
-function emitTsPropsType(props?: PropsDecl): string {
-  if (!props || props.fields.length === 0) {
-    return "export type Props = Record<string, never>;";
+function emitTsInputsType(inputs?: InputsDecl): string {
+  if (!inputs || inputs.fields.length === 0) {
+    return "export type Inputs = Record<string, never>;";
   }
 
-  const lines = props.fields.map((field) => {
+  const lines = inputs.fields.map((field) => {
     const optional = field.optional ? "?" : "";
     return `  ${field.name}${optional}: ${field.typeText};`;
   });
 
-  return ["export interface Props {", ...lines, "}"].join("\n");
+  return ["export interface Inputs {", ...lines, "}"].join("\n");
 }
 
-function emitPropsDestructure(props?: PropsDecl): string | null {
-  if (!props || props.fields.length === 0) {
+function emitInputsPrelude(inputsDecls?: Array<{ name: string; kind: any }>): string | null {
+  if (!inputsDecls || inputsDecls.length === 0) {
     return null;
   }
-  const names = props.fields.map((field) => field.name);
-  return `const { ${names.join(", ")} } = props ?? {};`;
+  const names = inputsDecls.map((decl) => decl.name);
+  return `const { ${names.join(", ")} } = __inputs ?? {};`;
 }
 
 function escapeText(value: string): string {

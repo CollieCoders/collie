@@ -10,19 +10,19 @@ export interface ClassAliasesDecl {
   aliases: ClassAliasDecl[];
 }
 
-export type PropDeclKind = "value" | "callable";
+export type InputDeclKind = "value";
 
-export interface PropDecl {
+export interface InputDecl {
   name: string;
-  kind: PropDeclKind;  // "callable" when declared as name()
+  kind: InputDeclKind;
   span?: SourceSpan;   // span for the decl (at least name)
 }
 
 export interface RootNode {
   type: "Root";
   children: Node[];
-  props?: PropsDecl;
-  propsDecls?: PropDecl[];
+  inputs?: InputsDecl;
+  inputsDecls?: InputDecl[];
   classAliases?: ClassAliasesDecl;
   clientComponent?: boolean;
   id?: string;
@@ -113,11 +113,11 @@ export interface ConditionalNode {
   branches: ConditionalBranch[];
 }
 
-export interface PropsDecl {
-  fields: PropsField[];
+export interface InputsDecl {
+  fields: InputsField[];
 }
 
-export interface PropsField {
+export interface InputsField {
   name: string;
   optional: boolean;
   typeText: string;

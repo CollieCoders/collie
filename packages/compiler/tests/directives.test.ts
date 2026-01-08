@@ -87,6 +87,8 @@ console.log("▶ directives :: conditional codegen parity");
 
 const conditionalCodeSource = `
 #id directives.codegen
+#inputs
+  loggedIn
 @if loggedIn
   div | Hi
 @else
@@ -104,10 +106,10 @@ assert.deepEqual(
   "Conditional codegen should not emit diagnostics"
 );
 assert.ok(
-  conditionalCodegen.code.includes("return (props?.loggedIn) ? <div>Hi</div> : <div>Bye</div>;"),
+  conditionalCodegen.code.includes("return (loggedIn) ? <div>Hi</div> : <div>Bye</div>;"),
   "Conditional codegen should emit a ternary without extra wrappers"
 );
-const loggedInCount = (conditionalCodegen.code.match(/props\?\.\s*loggedIn/g) ?? []).length;
+const loggedInCount = (conditionalCodegen.code.match(/\(loggedIn\)/g) ?? []).length;
 assert.equal(loggedInCount, 1, "Conditional codegen should not duplicate condition evaluation");
 
 console.log("✅ conditional codegen parity tests passed.");

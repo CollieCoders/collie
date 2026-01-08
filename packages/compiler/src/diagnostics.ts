@@ -43,11 +43,7 @@ export type DiagnosticCode =
   | "COLLIE703"
   | "COLLIE_ID_NOT_PASCAL_CASE"
   | "dialect.token.disallowed"
-  | "dialect.token.nonPreferred"
-  | "props.missingDeclaration"
-  | "props.unusedDeclaration"
-  | "props.style.nonPreferred"
-  | "props.block.recommendedOrRequired";
+  | "dialect.token.nonPreferred";
 
 export interface SourcePos {
   line: number;

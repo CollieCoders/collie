@@ -29,7 +29,7 @@ No closing tags. No angle-bracket soup. Just indentation.
 Templates compile to render modules that the `<Collie id="...">` runtime loads on demand.
 
 ### **3. Built-in ergonomics**
-- `#props` block for typed props  
+- `#inputs` block for declaring inputs  
 - `#classes` block for class alias bundles  
 - `@if / @elseIf / @else / @for` directives  
 - Pipe text (`| Some text`)  
@@ -51,9 +51,9 @@ Collie uses a tiny registry runtime while keeping templates as plain JSX/TSX ren
 
 ```collie
 #id welcome.hero
-#props
-  name: string
-  isMember: boolean
+#inputs
+  name
+  isMember
 
 #classes
   cta = "bg-sky-600 text-white px-4 py-2 rounded"
@@ -184,7 +184,7 @@ The compiler is intended to be:
 ### **Vite Plugin (`@collie-lang/vite`)**
 
 * Build-time registry generation
-* Virtual template modules that export `render(props)`
+* Virtual template modules that export `render(__inputs)`
 * Sourcemaps for accurate file/line tracking
 
 ### **CLI (`@collie-lang/cli`)**
@@ -220,7 +220,7 @@ All full templates must start with a `#id` block; snippets below omit it for bre
 
 ### **Blocks**
 
-* `#props` — typed props for the component
+* `#inputs` — declare inputs for the component
 * `#classes` — reusable Tailwind-style bundles
 * `#slots` — (coming soon) slot declarations
 

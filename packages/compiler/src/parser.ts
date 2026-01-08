@@ -10,8 +10,8 @@ import type {
   ForNode,
   JSXPassthroughNode,
   Node,
-  PropDecl,
-  PropsField,
+  InputDecl,
+  InputsField,
   RootNode,
   SlotBlock,
   TextNode
@@ -19,7 +19,6 @@ import type {
 import type { NormalizedCollieDialectOptions } from "@collie-lang/config";
 import { type Diagnostic, type DiagnosticCode, type SourceSpan, createSpan } from "./diagnostics.ts";
 import { enforceDialect } from "./dialect.ts";
-import { enforceProps, enforcePropAliases } from "./props.ts";
 
 export interface TemplateUnit {
   id: string;
@@ -294,7 +293,7 @@ function parseTemplateBlock(
   const diagnostics: Diagnostic[] = [];
   const root: RootNode = { type: "Root", children: [] };
   const stack: StackItem[] = [{ node: root, level: -1 }];
-  let propsBlockLevel: number | null = null;
+  let inputsBlockLevel: number | null = null;
   let classesBlockLevel: number | null = null;
   let sawTopLevelTemplateNode = false;
   const conditionalChains = new Map<number, ConditionalChainState>();
@@ -344,14 +343,14 @@ function parseTemplateBlock(
 
     let level = indent / 2;
 
-    if (propsBlockLevel !== null && level <= propsBlockLevel) {
-      propsBlockLevel = null;
+    if (inputsBlockLevel !== null && level <= inputsBlockLevel) {
+      inputsBlockLevel = null;
     }
     if (classesBlockLevel !== null && level <= classesBlockLevel) {
       classesBlockLevel = null;
     }
 
-    const isInPropsBlock = propsBlockLevel !== null && level > propsBlockLevel;
+    const isInInputsBlock = inputsBlockLevel !== null && level > inputsBlockLevel;
     const isInClassesBlock = classesBlockLevel !== null && level > classesBlockLevel;
 
     while (stack.length > 1 && stack[stack.length - 1].level >= level) {
@@ -359,7 +358,7 @@ function parseTemplateBlock(
     }
 
     const parentLevel = stack[stack.length - 1].level;
-    if (level > parentLevel + 1 && !isInPropsBlock && !isInClassesBlock) {
+    if (level > parentLevel + 1 && !isInInputsBlock && !isInClassesBlock) {
       pushDiag(
         diagnostics,
         "COLLIE003",
@@ -408,49 +407,35 @@ function parseTemplateBlock(
       continue;
     }
 
-    if (trimmed === "props") {
-      pushDiag(
-        diagnostics,
-        "COLLIE103",
-        "`props` must be declared using `#props`.",
-        lineNumber,
-        indent + 1,
-        lineOffset,
-        trimmed.length
-      );
-      if (level === 0) {
-        propsBlockLevel = level;
-      }
-      continue;
-    }
-
-    if (trimmed === "#props") {
+    if (trimmed === "#inputs") {
       if (level !== 0) {
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "#props block must be at the top level.",
+          "#inputs block must be at the top level.",
           lineNumber,
           indent + 1,
           lineOffset,
           trimmed.length
         );
-      } else if (root.props) {
+      } else if (root.inputs) {
         pushDiag(
           diagnostics,
           "COLLIE101",
-          "Only one #props block is allowed per #id.",
+          "Only one #inputs block is allowed per #id.",
           lineNumber,
           indent + 1,
           lineOffset,
           trimmed.length
         );
       } else {
-        root.props = { fields: [] };
-        root.propsDecls = [];
+        root.inputs = { fields: [] };
       }
       if (level === 0) {
-        propsBlockLevel = level;
+        if (!root.inputsDecls) {
+          root.inputsDecls = [];
+        }
+        inputsBlockLevel = level;
       }
       continue;
     }
@@ -492,12 +477,12 @@ function parseTemplateBlock(
       continue;
     }
 
-    if (propsBlockLevel !== null && level > propsBlockLevel) {
-      if (level !== propsBlockLevel + 1) {
+    if (inputsBlockLevel !== null && level > inputsBlockLevel) {
+      if (level !== inputsBlockLevel + 1) {
         pushDiag(
           diagnostics,
           "COLLIE102",
-          "#props lines must be indented two spaces under the #props header.",
+          "#inputs lines must be indented two spaces under the #inputs header.",
           lineNumber,
           indent + 1,
           lineOffset
@@ -505,22 +490,22 @@ function parseTemplateBlock(
         continue;
       }
 
-      const decl = parsePropDecl(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
-      if (decl && root.propsDecls) {
+      const decl = parseInputDecl(lineContent, lineNumber, indent + 1, lineOffset, diagnostics);
+      if (decl && root.inputsDecls) {
         // Check for duplicates
-        const existing = root.propsDecls.find((d) => d.name === decl.name);
+        const existing = root.inputsDecls.find((d) => d.name === decl.name);
         if (existing) {
           pushDiag(
             diagnostics,
             "COLLIE106",
-            `Duplicate prop declaration "${decl.name}".`,
+            `Duplicate input declaration "${decl.name}".`,
             lineNumber,
             indent + 1,
             lineOffset,
             trimmed.length
           );
         } else {
-          root.propsDecls.push(decl);
+          root.inputsDecls.push(decl);
         }
       }
       continue;
@@ -973,11 +958,7 @@ function parseTemplateBlock(
 
   if (options.dialect) {
     diagnostics.push(...enforceDialect(root, options.dialect));
-    diagnostics.push(...enforceProps(root, options.dialect.props));
   }
-  
-  // Enforce #props alias diagnostics (only when #props exists)
-  diagnostics.push(...enforcePropAliases(root));
 
   return { root, diagnostics };
 }
@@ -1640,50 +1621,6 @@ function parseJSXPassthrough(
     span: createSpan(lineNumber, exprColumn, payload.length, lineOffset)
   };
 }
-
-// function parsePropsField(
-//   line: string,
-//   lineNumber: number,
-//   column: number,
-//   lineOffset: number,
-//   diagnostics: Diagnostic[]
-// ): PropsField | null {
-//   const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)(\??)\s*:\s*(.+)$/);
-//   if (!match) {
-//     pushDiag(
-//       diagnostics,
-//       "COLLIE102",
-//       "Props lines must be in the form `name[:?] Type`.",
-//       lineNumber,
-//       column,
-//       lineOffset,
-//       Math.max(line.length, 1)
-//     );
-//     return null;
-//   }
-
-//   const [, name, optionalFlag, typePart] = match;
-//   const typeText = typePart.trim();
-//   if (!typeText) {
-//     pushDiag(
-//       diagnostics,
-//       "COLLIE102",
-//       "Props lines must provide a type after the colon.",
-//       lineNumber,
-//       column,
-//       lineOffset,
-//       Math.max(line.length, 1)
-//     );
-//     return null;
-//   }
-
-//   return {
-//     name,
-//     optional: optionalFlag === "?",
-//     typeText,
-//     span: createSpan(lineNumber, column, Math.max(line.length, 1), lineOffset)
-//   };
-// }
 
 function parseClassAliasLine(
   line: string,
@@ -2496,13 +2433,13 @@ function parseAndAddAttribute(
   }
 }
 
-function parsePropDecl(
+function parseInputDecl(
   line: string,
   lineNumber: number,
   column: number,
   lineOffset: number,
   diagnostics: Diagnostic[]
-): PropDecl | null {
+): InputDecl | null {
   const trimmed = line.trim();
   
   // Check for type hints (not allowed)
@@ -2510,26 +2447,13 @@ function parsePropDecl(
     pushDiag(
       diagnostics,
       "COLLIE104",
-      'Types are not supported in #props yet. Use "name" or "name()".',
+      'Types are not supported in #inputs yet. Use "name".',
       lineNumber,
       column,
       lineOffset,
       trimmed.length
     );
     return null;
-  }
-  
-  // Check for callable form: name()
-  const callableMatch = trimmed.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\(\)$/);
-  if (callableMatch) {
-    const name = callableMatch[1];
-    const nameStart = line.indexOf(name);
-    const nameColumn = column + nameStart;
-    return {
-      name,
-      kind: "callable",
-      span: createSpan(lineNumber, nameColumn, name.length, lineOffset)
-    };
   }
   
   // Check for value form: name
@@ -2549,7 +2473,7 @@ function parsePropDecl(
   pushDiag(
     diagnostics,
     "COLLIE105",
-    'Invalid #props declaration. Use "name" or "name()".',
+    'Invalid #inputs declaration. Use "name".',
     lineNumber,
     column,
     lineOffset,
