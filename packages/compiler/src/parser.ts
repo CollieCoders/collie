@@ -358,7 +358,7 @@ function parseTemplateBlock(
     }
 
     const parentLevel = stack[stack.length - 1].level;
-    if (level > parentLevel + 1 && !isInPropsBlock && !isInClassesBlock) {
+    if (level > parentLevel + 1 && !isInInputsBlock && !isInClassesBlock) {
       pushDiag(
         diagnostics,
         "COLLIE003",
@@ -407,38 +407,6 @@ function parseTemplateBlock(
       continue;
     }
 
-    if (trimmed === "props") {
-      pushDiag(
-        diagnostics,
-        "COLLIE103",
-        "`props` is not supported. Use `#inputs` instead.",
-        lineNumber,
-        indent + 1,
-        lineOffset,
-        trimmed.length
-      );
-      if (level === 0) {
-        inputsBlockLevel = level;
-      }
-      continue;
-    }
-
-    if (trimmed === "#props") {
-      pushDiag(
-        diagnostics,
-        "COLLIE103",
-        "`#props` is not supported. Use `#inputs` instead.",
-        lineNumber,
-        indent + 1,
-        lineOffset,
-        trimmed.length
-      );
-      if (level === 0) {
-        inputsBlockLevel = level;
-      }
-      continue;
-    }
-
     if (trimmed === "#inputs") {
       if (level !== 0) {
         pushDiag(
@@ -462,9 +430,11 @@ function parseTemplateBlock(
         );
       } else {
         root.inputs = { fields: [] };
-        root.inputsDecls = [];
       }
       if (level === 0) {
+        if (!root.inputsDecls) {
+          root.inputsDecls = [];
+        }
         inputsBlockLevel = level;
       }
       continue;
@@ -1651,50 +1621,6 @@ function parseJSXPassthrough(
     span: createSpan(lineNumber, exprColumn, payload.length, lineOffset)
   };
 }
-
-// function parsePropsField(
-//   line: string,
-//   lineNumber: number,
-//   column: number,
-//   lineOffset: number,
-//   diagnostics: Diagnostic[]
-// ): PropsField | null {
-//   const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)(\??)\s*:\s*(.+)$/);
-//   if (!match) {
-//     pushDiag(
-//       diagnostics,
-//       "COLLIE102",
-//       "Props lines must be in the form `name[:?] Type`.",
-//       lineNumber,
-//       column,
-//       lineOffset,
-//       Math.max(line.length, 1)
-//     );
-//     return null;
-//   }
-
-//   const [, name, optionalFlag, typePart] = match;
-//   const typeText = typePart.trim();
-//   if (!typeText) {
-//     pushDiag(
-//       diagnostics,
-//       "COLLIE102",
-//       "Props lines must provide a type after the colon.",
-//       lineNumber,
-//       column,
-//       lineOffset,
-//       Math.max(line.length, 1)
-//     );
-//     return null;
-//   }
-
-//   return {
-//     name,
-//     optional: optionalFlag === "?",
-//     typeText,
-//     span: createSpan(lineNumber, column, Math.max(line.length, 1), lineOffset)
-//   };
-// }
 
 function parseClassAliasLine(
   line: string,

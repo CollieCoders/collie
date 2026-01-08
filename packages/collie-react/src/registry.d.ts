@@ -1,5 +1,5 @@
 export interface CollieTemplateModule {
-  render: (props: any) => any;
+  render: (__inputs: any) => any;
 }
 
 export type CollieRegistry = Record<string, () => Promise<CollieTemplateModule>>;

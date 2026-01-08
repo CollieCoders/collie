@@ -4,14 +4,14 @@ Collie compiler core (MVP stub).
 
 ## Class aliases
 
-The compiler understands a top-level `classes` block that acts as a macro table for CSS/Tailwind tokens. Each block must live at indent level 0 and appear before the first real template node (`div`, text, expressions, conditionals). Multiple `classes` blocks are allowed (even when separated by `props`) and all aliases are merged:
+The compiler understands a top-level `classes` block that acts as a macro table for CSS/Tailwind tokens. Each block must live at indent level 0 and appear before the first real template node (`div`, text, expressions, conditionals). Multiple `classes` blocks are allowed and all aliases are merged:
 
 ```collie
 classes
   baseContainer = container.mx-auto.p-6
 
-props
-  user: User
+#inputs
+  user
 
 classes
   adminPanel = mt-4.bg-red-100.text-red-700

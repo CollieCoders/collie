@@ -42,12 +42,12 @@ function normalizeRenderModule(mod: CollieTemplateModule | undefined, id: string
 }
 
 export function Collie(props: CollieProps) {
-  const { id, inputs, classes, fallback = null, ...rest } = props;
+  const { id, inputs, classes: _classes, fallback = null, children, ...rest } = props;
   const [state, setState] = useState<LoadState>({ render: null, error: null });
 
   const loader = useMemo(() => registry[id], [id]);
 
-  // Normalize inputs: if `inputs` prop exists, use it; otherwise use remaining props
+  // Normalize inputs: if `inputs` prop exists, use it; otherwise use remaining props (id/inputs/children stripped)
   const normalizedInputs = useMemo(() => {
     if (inputs !== undefined) {
       return inputs;

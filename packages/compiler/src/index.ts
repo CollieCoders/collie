@@ -12,7 +12,6 @@ export type {
   CollieCssOptions,
   CollieCssStrategy,
   CollieDialectOptions,
-  CollieDialectPropsOptions,
   CollieDialectTokenKind,
   CollieDialectTokenRule,
   CollieDialectTokens,
@@ -26,7 +25,6 @@ export type {
   NormalizedCollieCssOptions,
   NormalizedCollieConfig,
   NormalizedCollieDialectOptions,
-  NormalizedCollieDialectPropsOptions,
   NormalizedCollieDialectTokenRule,
   NormalizedCollieDialectTokens,
   NormalizedCollieProjectConfig
@@ -59,8 +57,6 @@ export type {
   ForNode,
   JSXPassthroughNode,
   Node,
-  PropsDecl,
-  PropsField,
   RootNode,
   SlotBlock,
   TextChunk,
@@ -312,25 +308,25 @@ function hasErrors(diagnostics: Diagnostic[]): boolean {
 function createStubComponent(name: string, flavor: "jsx" | "tsx"): string {
   if (flavor === "tsx") {
     return [
-      "export type Props = Record<string, never>;",
-      `export default function ${name}(props: Props) {`,
+      "export type Inputs = Record<string, never>;",
+      `export default function ${name}(__inputs: Inputs) {`,
       "  return null;",
       "}"
     ].join("\n");
   }
-  return [`export default function ${name}(props) {`, "  return null;", "}"].join("\n");
+  return [`export default function ${name}(__inputs) {`, "  return null;", "}"].join("\n");
 }
 
 function createStubRender(flavor: "jsx" | "tsx"): string {
   if (flavor === "tsx") {
     return [
-      "export type Props = Record<string, never>;",
-      "export function render(props: any) {",
+      "export type Inputs = Record<string, never>;",
+      "export function render(__inputs: any) {",
       "  return null;",
       "}"
     ].join("\n");
   }
-  return ["export function render(props) {", "  return null;", "}"].join("\n");
+  return ["export function render(__inputs) {", "  return null;", "}"].join("\n");
 }
 
 function wrapRenderModuleAsComponent(
@@ -338,8 +334,11 @@ function wrapRenderModuleAsComponent(
   name: string,
   flavor: "jsx" | "tsx"
 ): string {
-  const signature = flavor === "tsx" ? `export default function ${name}(props: Props) {` : `export default function ${name}(props) {`;
-  const wrapper = [signature, "  return render(props);", "}"].join("\n");
+  const signature =
+    flavor === "tsx"
+      ? `export default function ${name}(__inputs: Inputs) {`
+      : `export default function ${name}(__inputs) {`;
+  const wrapper = [signature, "  return render(__inputs);", "}"].join("\n");
   return `${renderModule}\n\n${wrapper}`;
 }
 

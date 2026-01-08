@@ -313,7 +313,7 @@ async function checkCollieFiles(context: DoctorContext): Promise<DiagnosticResul
 }
 
 async function testCompilation(): Promise<DiagnosticResult> {
-  const template = ['props', '  name: string = "world"', "", "div class=\"doctor-check\"", "  h1", "    Hello {{ name }}"].join(
+  const template = ["#inputs", "  name", "", "div class=\"doctor-check\"", "  h1", "    Hello {{ name }}"].join(
     "\n"
   );
   try {

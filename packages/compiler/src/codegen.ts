@@ -184,8 +184,8 @@ function emitComponent(
   env: TemplateEnv
 ): string {
   const attrs = emitAttributes(node.attributes, aliasEnv, env);
-  const slotProps = emitSlotProps(node, aliasEnv, env);
-  const allAttrs = `${attrs}${slotProps}`;
+  const slotBindings = emitSlotBindings(node, aliasEnv, env);
+  const allAttrs = `${attrs}${slotBindings}`;
   const children = emitChildrenWithSpacing(node.children, aliasEnv, env);
   
   if (children.length > 0) {
@@ -244,7 +244,7 @@ function emitAttributes(
   }).join("");
 }
 
-function emitSlotProps(
+function emitSlotBindings(
   node: ComponentNode,
   aliasEnv: Map<string, readonly string[]>,
   env: TemplateEnv

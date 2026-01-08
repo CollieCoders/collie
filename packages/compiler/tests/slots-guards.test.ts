@@ -19,8 +19,12 @@ interface ErrorCase {
 
 const successCases: SuccessCase[] = [
   {
-    name: "component slots compile to props",
+    name: "component slots compile to inputs",
     source: `
+#inputs
+  title
+  description
+
 Card
   @header
     h2
@@ -30,41 +34,51 @@ Card
       {description}
 `.trim(),
     snippets: [
-      `header={<><h2>{props?.title}</h2></>}`,
-      `body={<><p>{props?.description}</p></>}`
+      `header={<><h2>{title}</h2></>}`,
+      `body={<><p>{description}</p></>}`
     ]
   },
   {
     name: "element guards short-circuit rendering",
     source: `
+#inputs
+  isVisible
+
 div?isVisible
   span
     "Hello"
 `.trim(),
-    snippets: [`return (props?.isVisible) && <div`, `{(props?.isVisible) && <div`]
+    snippets: [`return (isVisible) && <div`, `{(isVisible) && <div`]
   },
   {
     name: "nested guards compose correctly",
     source: `
+#inputs
+  outerCondition
+  innerCondition
+
 div?outerCondition
   span?innerCondition
     "Nested"
 `.trim(),
     snippets: [
-      `(props?.outerCondition) && <div`,
-      `{(props?.innerCondition) && <span`
+      `(outerCondition) && <div`,
+      `{(innerCondition) && <span`
     ]
   },
   {
     name: "component guards work alongside slots",
     source: `
+#inputs
+  showCard
+
 Card?showCard
   @body
     div.wrapper
       "Hello"
 `.trim(),
     snippets: [
-      `(props?.showCard) && <Card`,
+      `(showCard) && <Card`,
       `body={<><div className="wrapper">Hello</div></>}`
     ]
   }

@@ -19,4 +19,4 @@ export function App() {
 }
 ```
 
-`id` must match a template id discovered by `@collie-lang/vite`. All other props are forwarded to the template's `render(props)` function; `fallback` renders while the template module loads. Unknown ids throw a helpful error listing known ids.
+`id` must match a template id discovered by `@collie-lang/vite`. Inputs are forwarded to the template's `render(__inputs)` function (use the `inputs` prop explicitly or rely on remaining props); `fallback` renders while the template module loads. Unknown ids throw a helpful error listing known ids.

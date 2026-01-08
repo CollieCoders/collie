@@ -1362,7 +1362,7 @@ async function ensureCollieDeclaration(root: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
 
   const declaration = `// Allows importing Collie templates as React components.
-// Customize this typing if your templates expose specific props.
+// Customize this typing if your templates expose specific inputs.
 declare module "*.collie" {
   import type { ComponentType } from "react";
   const component: ComponentType<Record<string, unknown>>;
