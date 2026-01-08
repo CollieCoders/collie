@@ -10,7 +10,7 @@ export interface ClassAliasesDecl {
   aliases: ClassAliasDecl[];
 }
 
-export type InputDeclKind = "value";
+export type InputDeclKind = "value" | "fn";
 
 export interface InputDecl {
   name: string;
