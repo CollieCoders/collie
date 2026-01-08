@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/compiler",
-  "version": "1.5.2",
+  "version": "1.5.22",
   "description": "Collie compiler core (parser + diagnostics + TSX codegen).",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@collie-lang/config": "^1.5.2",
+    "@collie-lang/config": "^1.5.22",
     "typescript": "^5.9.3"
   },
   "scripts": {
