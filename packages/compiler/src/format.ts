@@ -2,7 +2,7 @@ import type {
   Attribute,
   ClassAliasesDecl,
   Node,
-  PropsDecl,
+  InputsDecl,
   RootNode,
   TextNode,
   TextPart
@@ -95,8 +95,8 @@ function serializeRoot(root: RootNode, indentSize: number): string {
   if (root.classAliases && root.classAliases.aliases.length > 0) {
     sections.push(formatClassAliases(root.classAliases, indentSize));
   }
-  if (root.props && root.props.fields.length > 0) {
-    sections.push(formatProps(root.props, indentSize));
+  if (root.inputs && root.inputs.fields.length > 0) {
+    sections.push(formatInputs(root.inputs, indentSize));
   }
   if (root.children.length > 0) {
     sections.push(formatNodes(root.children, 0, indentSize));
@@ -130,10 +130,10 @@ function formatClassAliases(decl: ClassAliasesDecl, indentSize: number): string[
   return lines;
 }
 
-function formatProps(props: PropsDecl, indentSize: number): string[] {
+function formatInputs(inputs: InputsDecl, indentSize: number): string[] {
   const indent = indentString(1, indentSize);
-  const lines: string[] = ["props"];
-  for (const field of props.fields) {
+  const lines: string[] = ["#inputs"];
+  for (const field of inputs.fields) {
     const optionalFlag = field.optional ? "?" : "";
     lines.push(cleanLine(`${indent}${field.name}${optionalFlag}: ${field.typeText.trim()}`));
   }
