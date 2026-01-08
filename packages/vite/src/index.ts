@@ -125,6 +125,18 @@ function formatDuplicateIdError(duplicates: Map<string, TemplateLocation[]>, roo
   return lines.join("\n");
 }
 
+function areSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const value of a) {
+    if (!b.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildIgnoreGlobs(config?: ResolvedConfig): string[] {
   const ignore = new Set(DEFAULT_IGNORE_GLOBS);
   if (!config) {
@@ -309,7 +321,7 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
     const filePath = ctx.file;
     const root = resolvedConfig?.root ?? process.cwd();
-    const previousIds = fileToTemplateIds.get(filePath) ?? new Set<string>();
+    const previousIds = new Set(fileToTemplateIds.get(filePath) ?? new Set<string>());
     const previousModuleIds = collectModuleIds(previousIds);
 
     let source: string | null = null;
@@ -369,15 +381,36 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     const nextIds = fileToTemplateIds.get(filePath) ?? new Set<string>();
     const nextModuleIds = collectModuleIds(nextIds);
     const moduleIds = new Set<string>([...previousModuleIds, ...nextModuleIds]);
-    return invalidateModules(ctx, moduleIds);
+    const idsChanged = !areSetsEqual(previousIds, nextIds);
+    return invalidateModules(ctx, moduleIds, {
+      includeRegistry: idsChanged,
+      includeIds: idsChanged
+    });
   };
 
-  const invalidateModules = (ctx: HmrContext, moduleIds: Iterable<string>): ModuleNode[] => {
+  const invalidateModules = (
+    ctx: HmrContext,
+    moduleIds: Iterable<string>,
+    options?: { includeRegistry?: boolean; includeIds?: boolean }
+  ): ModuleNode[] => {
     const modules: ModuleNode[] = [];
-    const registryModule = ctx.server.moduleGraph.getModuleById(VIRTUAL_REGISTRY_RESOLVED);
-    if (registryModule) {
-      ctx.server.moduleGraph.invalidateModule(registryModule);
-      modules.push(registryModule);
+    const includeRegistry = options?.includeRegistry ?? true;
+    const includeIds = options?.includeIds ?? true;
+
+    if (includeRegistry) {
+      const registryModule = ctx.server.moduleGraph.getModuleById(VIRTUAL_REGISTRY_RESOLVED);
+      if (registryModule) {
+        ctx.server.moduleGraph.invalidateModule(registryModule);
+        modules.push(registryModule);
+      }
+    }
+
+    if (includeIds) {
+      const idsModule = ctx.server.moduleGraph.getModuleById(VIRTUAL_IDS_RESOLVED);
+      if (idsModule) {
+        ctx.server.moduleGraph.invalidateModule(idsModule);
+        modules.push(idsModule);
+      }
     }
     for (const moduleId of moduleIds) {
       const mod = ctx.server.moduleGraph.getModuleById(moduleId);
@@ -430,6 +463,65 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
       resolvedRuntime = options.jsxRuntime ?? "automatic";
       resolvedConfig = config;
       resetTemplates();
+    },
+
+    configureServer(server) {
+      const root = resolvedConfig?.root ?? server.config.root ?? process.cwd();
+      const ignore = buildIgnoreGlobs(resolvedConfig ?? server.config);
+      const watchPattern = normalizePath(path.join(root, COLLIE_GLOB));
+      let watcherReady = false;
+
+      const isIgnoredPath = (relative: string): boolean => {
+        return ignore.some((pattern) => {
+          if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
+            const segment = pattern.slice(3, -3);
+            return (
+              relative === segment ||
+              relative.startsWith(`${segment}/`) ||
+              relative.includes(`/${segment}/`)
+            );
+          }
+          if (pattern.endsWith("/**")) {
+            const prefix = pattern.slice(0, -3);
+            return relative === prefix || relative.startsWith(`${prefix}/`);
+          }
+          return false;
+        });
+      };
+
+      const isRelevant = (filePath: string): boolean => {
+        if (!isCollieFile(filePath)) {
+          return false;
+        }
+        const relative = normalizePath(path.relative(root, filePath));
+        if (!relative || relative.startsWith("..")) {
+          return false;
+        }
+        return !isIgnoredPath(relative);
+      };
+
+      server.watcher.add(watchPattern);
+      server.watcher.on("ready", () => {
+        watcherReady = true;
+      });
+      server.watcher.on("add", (filePath) => {
+        if (!watcherReady || !isRelevant(filePath) || needsScan) {
+          return;
+        }
+        if (!fileToTemplateIds.has(filePath)) {
+          resetTemplates();
+          server.ws.send({ type: "full-reload" });
+        }
+      });
+      server.watcher.on("unlink", (filePath) => {
+        if (!watcherReady || !isRelevant(filePath) || needsScan) {
+          return;
+        }
+        if (fileToTemplateIds.has(filePath)) {
+          resetTemplates();
+          server.ws.send({ type: "full-reload" });
+        }
+      });
     },
 
     resolveId(id, importer) {
@@ -494,7 +586,23 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
         return {
           code: [
             "/** @type {Record<string, () => Promise<{ render: (__inputs: any) => any }>>} */",
-            `export const registry = {\n${lines.join("\n")}\n};`
+            "const __collieRegistry = import.meta.hot?.data?.registry ?? {};",
+            `const __nextRegistry = {\n${lines.join("\n")}\n};`,
+            "for (const key of Object.keys(__collieRegistry)) {",
+            "  if (!(key in __nextRegistry)) {",
+            "    delete __collieRegistry[key];",
+            "  }",
+            "}",
+            "for (const [key, value] of Object.entries(__nextRegistry)) {",
+            "  __collieRegistry[key] = value;",
+            "}",
+            "export const registry = __collieRegistry;",
+            "if (import.meta.hot) {",
+            "  import.meta.hot.accept();",
+            "  import.meta.hot.dispose((data) => {",
+            "    data.registry = __collieRegistry;",
+            "  });",
+            "}"
           ].join("\n"),
           map: null
         };
