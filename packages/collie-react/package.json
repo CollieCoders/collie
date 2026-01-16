@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/react",
-  "version": "1.5.22",
+  "version": "1.5.23",
   "description": "Runtime <Collie id=\"...\"> component that resolves templates from virtual:collie/registry.",
   "license": "MIT",
   "type": "module",

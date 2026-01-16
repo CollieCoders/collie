@@ -1,6 +1,6 @@
 {
   "name": "@collie-lang/config",
-  "version": "1.5.22",
+  "version": "1.5.23",
   "description": "Shared configuration types and helpers for Collie.",
   "license": "MIT",
   "type": "module",
