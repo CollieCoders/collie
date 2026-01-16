@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "collie": "./dist/index.js"
+    "collie": "dist/index.js"
   },
   "exports": {
     ".": {
