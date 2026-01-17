@@ -15,10 +15,7 @@
     "test": "pnpm -r --filter='@collie-lang/*' test",
     "relink": "scripts/reset-collie-links.sh",
     "file-tree": "tree -l 20 -o file-tree.txt --ignore='node_modules/'",
-    "local:pack": "node scripts/local-pack.mjs",
-    "local:clean": "rimraf .local-packs",
-    "prepublish": "pnpm clean && pnpm install && pnpm build && pnpm typecheck && npm login",
-    "publish:all": "cd packages && cd cli && npm publish && .. && cd collie-react && npm publish && .. && cd compiler && npm publish && .. && cd config && npm publish && .. && cd vite && npm publish && .. && .."
+    "publish:all": "bash ./scripts/publish-all.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
@@ -34,5 +31,8 @@
       "vite": "^7.3.0",
       "vitest": "^4.0.16"
     }
+  },
+  "dependencies": {
+    "semver": "^7.7.3"
   }
 }
