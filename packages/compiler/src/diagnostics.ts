@@ -41,6 +41,7 @@ export type DiagnosticCode =
   | "COLLIE701"
   | "COLLIE702"
   | "COLLIE703"
+  | "COLLIE704"
   | "COLLIE_ID_NOT_PASCAL_CASE"
   | "dialect.token.disallowed"
   | "dialect.token.nonPreferred";

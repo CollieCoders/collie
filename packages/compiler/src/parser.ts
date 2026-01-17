@@ -2019,7 +2019,7 @@ function parseElementWithInfo(
       if (!rest.startsWith("|")) {
         pushDiag(
           diagnostics,
-          "COLLIE004",
+          "COLLIE704",
           "Inline text must start with '|'.",
           lineNumber,
           restColumn,
