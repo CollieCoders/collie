@@ -294,7 +294,7 @@ function expandClasses(
   // undefined aliases, so codegen simply replaces $alias tokens with their literal class list.
   const result: string[] = [];
   for (const cls of classes) {
-    const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+    const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_-]*)$/);
     if (!match) {
       result.push(cls);
       continue;

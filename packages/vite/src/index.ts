@@ -115,13 +115,29 @@ function formatLocation(location: TemplateLocation, root?: string): string {
   return file;
 }
 
+function compareLocations(a: TemplateLocation, b: TemplateLocation): number {
+  const pathOrder = normalizePath(a.file).localeCompare(normalizePath(b.file));
+  if (pathOrder !== 0) {
+    return pathOrder;
+  }
+  const lineOrder = (a.line ?? 0) - (b.line ?? 0);
+  if (lineOrder !== 0) {
+    return lineOrder;
+  }
+  return (a.col ?? 0) - (b.col ?? 0);
+}
+
 function formatDuplicateIdError(duplicates: Map<string, TemplateLocation[]>, root?: string): string {
   const lines = ["[collie] Duplicate template ids detected:"];
   const entries = Array.from(duplicates.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   for (const [id, locations] of entries) {
-    const formatted = locations.map((location) => formatLocation(location, root)).join(", ");
-    lines.push(`- ${id}: ${formatted}`);
+    const sorted = [...locations].sort(compareLocations);
+    lines.push(`- ${id}:`);
+    for (const location of sorted) {
+      lines.push(`  ${formatLocation(location, root)}`);
+    }
   }
+  lines.push("Recommended action: rename one #id to be unique.");
   return lines.join("\n");
 }
 
@@ -241,12 +257,12 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
 
     const root = resolvedConfig.root ?? process.cwd();
     const ignore = buildIgnoreGlobs(resolvedConfig);
-    const filePaths = await fg(COLLIE_GLOB, {
+    const filePaths = (await fg(COLLIE_GLOB, {
       cwd: root,
       absolute: true,
       onlyFiles: true,
       ignore
-    });
+    })).sort((a, b) => normalizePath(a).localeCompare(normalizePath(b)));
 
     const diagnostics: Diagnostic[] = [];
     const locationsById = new Map<string, TemplateLocation[]>();
@@ -345,16 +361,26 @@ export default function colliePlugin(options: ColliePluginOptions = {}): Plugin 
     }
 
     const duplicates = new Map<string, TemplateLocation[]>();
+    const seenInFile = new Map<string, TemplateLocation>();
     for (const template of document.templates) {
+      const location: TemplateLocation = {
+        file: filePath,
+        line: template.span?.start.line,
+        col: template.span?.start.col
+      };
       const existing = templatesById.get(template.id);
       if (existing && existing.filePath !== filePath) {
         const locations = duplicates.get(template.id) ?? [existing.location];
-        locations.push({
-          file: filePath,
-          line: template.span?.start.line,
-          col: template.span?.start.col
-        });
+        locations.push(location);
         duplicates.set(template.id, locations);
+      }
+      const previousInFile = seenInFile.get(template.id);
+      if (previousInFile) {
+        const locations = duplicates.get(template.id) ?? [previousInFile];
+        locations.push(location);
+        duplicates.set(template.id, locations);
+      } else {
+        seenInFile.set(template.id, location);
       }
     }
     if (duplicates.size) {

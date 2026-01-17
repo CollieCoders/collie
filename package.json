@@ -15,8 +15,7 @@
     "test": "pnpm -r --filter='@collie-lang/*' test",
     "relink": "scripts/reset-collie-links.sh",
     "file-tree": "tree -l 20 -o file-tree.txt --ignore='node_modules/'",
-    "local:pack": "node scripts/local-pack.mjs",
-    "local:clean": "rimraf .local-packs"
+    "publish:all": "bash ./scripts/publish-all.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
@@ -32,5 +31,8 @@
       "vite": "^7.3.0",
       "vitest": "^4.0.16"
     }
+  },
+  "dependencies": {
+    "semver": "^7.7.3"
   }
 }
