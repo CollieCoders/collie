@@ -122,7 +122,7 @@ function serializeRoot(root: RootNode, indentSize: number): string {
 
 function formatClassAliases(decl: ClassAliasesDecl, indentSize: number): string[] {
   const indent = indentString(1, indentSize);
-  const lines: string[] = ["classes"];
+  const lines: string[] = ["#classes"];
   for (const alias of decl.aliases) {
     const rhs = alias.classes.join(".");
     lines.push(cleanLine(`${indent}${alias.name} = ${rhs}`));

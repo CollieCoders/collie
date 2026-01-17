@@ -377,12 +377,12 @@ function parseTemplateBlock(
       conditionalChains.delete(level);
     }
 
-    if (trimmed === "classes") {
+    if (trimmed === "#classes") {
       if (level !== 0) {
         pushDiag(
           diagnostics,
           "COLLIE301",
-          "Classes block must be at the top level.",
+          "#classes block must be at the top level.",
           lineNumber,
           indent + 1,
           lineOffset,
@@ -392,7 +392,7 @@ function parseTemplateBlock(
         pushDiag(
           diagnostics,
           "COLLIE302",
-          "Classes block must appear before any template nodes.",
+          "#classes block must appear before any template nodes.",
           lineNumber,
           indent + 1,
           lineOffset,
@@ -516,7 +516,7 @@ function parseTemplateBlock(
         pushDiag(
           diagnostics,
           "COLLIE303",
-          "Classes lines must be indented two spaces under the classes header.",
+          "Classes lines must be indented two spaces under the #classes header.",
           lineNumber,
           indent + 1,
           lineOffset
