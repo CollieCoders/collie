@@ -73,7 +73,7 @@ interface ConditionalChainState {
 }
 
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_-]*/;
-const CLASS_NAME = /^[A-Za-z0-9_$-]+/;
+const CLASS_NAME = /^[_A-Za-z0-9$-]+/;
 const TEMPLATE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]*$/;
 
 function getIndentLevel(line: string): number {
@@ -1644,7 +1644,7 @@ function parseClassAliasLine(
   }
 
   const rawName = match[1].trim();
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(rawName)) {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(rawName)) {
     pushDiag(
       diagnostics,
       "COLLIE305",
@@ -1756,7 +1756,7 @@ function validateNodeClassAliases(
     const spans = node.type === "Element" ? (node.classSpans ?? []) : [];
     const classes = node.type === "Element" ? node.classes : [];
     classes.forEach((cls, index) => {
-      const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+      const match = cls.match(/^\$([A-Za-z_][A-Za-z0-9_-]*)$/);
       if (!match) {
         return;
       }
@@ -1932,7 +1932,7 @@ function parseElementWithInfo(
   if (!isComponent) {
     while (cursor < line.length && line[cursor] === ".") {
       cursor++; // skip the dot
-      const classMatch = line.slice(cursor).match(/^([A-Za-z0-9_$-]+)/);
+      const classMatch = line.slice(cursor).match(/^([_A-Za-z0-9$-]+)/);
       if (!classMatch) {
         pushDiag(
           diagnostics,
